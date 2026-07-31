@@ -149,6 +149,8 @@ class BackgroundGenerationService : Service() {
         val effectiveHeight = intent.getIntExtra("effective_height", height)
         val denoiseStrength = intent.getFloatExtra("denoise_strength", 0.6f)
         val useOpenCL = intent.getBooleanExtra("use_opencl", false)
+        val numThreads = intent.getIntExtra("num_threads", 4)
+        val nGpuLayers = intent.getIntExtra("n_gpu_layers", 16)
         val scheduler = intent.getStringExtra("scheduler") ?: "dpm"
         val aspectRatio = intent.getStringExtra("aspect_ratio") ?: "1:1"
         // Ultrafix: tiled img2img repair over an upscaled image. Uses its own
@@ -280,6 +282,8 @@ class BackgroundGenerationService : Service() {
                 put("height", height)
                 put("denoise_strength", denoiseStrength)
                 put("use_opencl", useOpenCL)
+                put("num_threads", numThreads)
+                put("n_gpu_layers", nGpuLayers)
                 put("scheduler", scheduler)
                 // Ultrafix never streams previews: each one would tile-decode
                 // the full image (the backend rejects it as well).

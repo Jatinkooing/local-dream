@@ -851,7 +851,7 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                 title = {
                     Column {
                         Text(
-                            text = "Local Dream✨",
+                            text = "airound✨",
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
