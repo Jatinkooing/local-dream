@@ -29,16 +29,17 @@ if [ -f "$HOME/.cargo/env" ]; then
 fi
 
 if command -v rustup >/dev/null 2>&1; then
-  echo "[build_cpu.sh] rustup found, ensuring toolchain 1.77 (pre-dangerous_implicit_autorefs) ..."
-  for VER in 1.77 1.78 1.79 1.80; do
+  echo "[build_cpu.sh] rustup found, ensuring toolchains 1.82-1.83 (can parse Cargo.lock v4, pre 1.84 lint) ..."
+  for VER in 1.82 1.83 1.84 1.80 stable; do
     rustup toolchain install $VER --profile minimal 2>&1 | tail -n 10 || true
   done
-  rustup default 1.77 2>&1 | tail -n 20 || true
-  echo "[build_cpu.sh] Adding Android Rust targets for 1.77..."
-  rustup target add aarch64-linux-android --toolchain 1.77 2>&1 | tail -n 30 || true
-  rustup target add armv7-linux-androideabi --toolchain 1.77 2>&1 | tail -n 20 || true
-  rustup target add x86_64-linux-android --toolchain 1.77 2>&1 | tail -n 20 || true
-  for VER in 1.78 1.79 1.80 stable; do
+  # Try 1.83 first (should parse v4 and not have dangerous_implicit_autorefs as error)
+  rustup default 1.83 2>&1 | tail -n 20 || true
+  echo "[build_cpu.sh] Adding Android Rust targets for 1.83..."
+  rustup target add aarch64-linux-android --toolchain 1.83 2>&1 | tail -n 30 || true
+  rustup target add armv7-linux-androideabi --toolchain 1.83 2>&1 | tail -n 20 || true
+  rustup target add x86_64-linux-android --toolchain 1.83 2>&1 | tail -n 20 || true
+  for VER in 1.82 1.80 stable; do
     rustup target add aarch64-linux-android --toolchain $VER 2>&1 | tail -n 5 || true
   done
   cargo --version
