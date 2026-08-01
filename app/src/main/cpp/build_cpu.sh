@@ -129,7 +129,8 @@ cmake -S . -B build/cpu \
   -DANDROID_STL=c++_static \
   -DCMAKE_BUILD_TYPE=Release \
   -DAIROND_CPU_ONLY=ON \
-  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 2>&1 | tee build/cpu/configure.log
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  -DTOKENIZERS_CPP_RUST_FLAGS="-A warnings -A dangerous_implicit_autorefs -A unsafe_op_in_unsafe_fn" 2>&1 | tee build/cpu/configure.log
 CONF_STATUS=${PIPESTATUS[0]}
 cat build/cpu/configure.log
 if [ $CONF_STATUS -ne 0 ]; then
