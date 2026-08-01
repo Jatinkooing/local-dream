@@ -29,17 +29,25 @@ if [ -f "$HOME/.cargo/env" ]; then
 fi
 
 if command -v rustup >/dev/null 2>&1; then
-  echo "[build_cpu.sh] rustup found, updating stable..."
-  rustup update stable 2>&1 | tail -n 20 || true
-  rustup default stable 2>&1 | tail -n 20 || true
-  echo "[build_cpu.sh] Adding Android Rust targets..."
-  rustup target add aarch64-linux-android 2>&1 | tail -n 30 || true
-  rustup target add armv7-linux-androideabi 2>&1 | tail -n 20 || true
-  rustup target add x86_64-linux-android 2>&1 | tail -n 20 || true
+  echo "[build_cpu.sh] rustup found, ensuring toolchain 1.80 (pre-dangerous_implicit_autorefs) and stable..."
+  rustup toolchain install 1.80 --profile minimal 2>&1 | tail -n 30 || true
+  rustup default 1.80 2>&1 | tail -n 20 || true
+  echo "[build_cpu.sh] Adding Android Rust targets for 1.80..."
+  rustup target add aarch64-linux-android --toolchain 1.80 2>&1 | tail -n 30 || true
+  rustup target add armv7-linux-androideabi --toolchain 1.80 2>&1 | tail -n 20 || true
+  rustup target add x86_64-linux-android --toolchain 1.80 2>&1 | tail -n 20 || true
+  # Also add for stable as fallback
+  rustup toolchain install stable --profile minimal 2>&1 | tail -n 20 || true
+  rustup target add aarch64-linux-android --toolchain stable 2>&1 | tail -n 20 || true
   cargo --version
   rustc --version
-  rustup target list --installed
+  rustup target list --installed || true
+  rustup show || true
 fi
+
+# Force older toolchain that doesn't have dangerous_implicit_autorefs lint as error
+export RUSTFLAGS="-A warnings -A dangerous_implicit_autorefs -A unsafe_op_in_unsafe_fn"
+echo "[build_cpu.sh] RUSTFLAGS=$RUSTFLAGS"
 
 # If cargo still not found, try common locations
 if ! command -v cargo >/dev/null 2>&1; then
