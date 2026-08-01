@@ -78,8 +78,6 @@ add_compile_options(
     -Wall
     -fno-rtti
     -fPIC
-    -flto
-    -ffast-math
     -funroll-loops
     -fvisibility=hidden
 )
@@ -179,7 +177,7 @@ endif()
 # executable
 add_executable(${PROJECT_NAME} ${SOURCES})
 if(NOT QNN_DEBUG_ENABLE)
-    target_link_options(${PROJECT_NAME} PRIVATE "-Wl,-s" "-flto")
+    target_link_options(${PROJECT_NAME} PRIVATE "-Wl,-s")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE ${PACKAGE_INCLUDES})
 

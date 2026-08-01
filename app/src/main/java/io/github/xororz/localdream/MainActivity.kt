@@ -26,6 +26,8 @@ import androidx.navigation.navArgument
 import io.github.xororz.localdream.data.MigrationState
 import io.github.xororz.localdream.navigation.Screen
 import io.github.xororz.localdream.ui.screens.HomePortalScreen
+import io.github.xororz.localdream.ui.screens.ChatScreen
+import io.github.xororz.localdream.ui.screens.VoiceScreen
 import io.github.xororz.localdream.ui.screens.HistoryScreen
 import io.github.xororz.localdream.ui.screens.MigrationScreen
 import io.github.xororz.localdream.ui.screens.ModelListScreen
@@ -191,6 +193,25 @@ private fun AppContent() {
 
             ModelRunScreen(
                 modelId = modelId,
+                navController = navController,
+            )
+        }
+        composable(
+            route = Screen.Chat.route,
+            arguments = listOf(
+                navArgument("modelId") {
+                    type = NavType.StringType
+                },
+            ),
+        ) { backStackEntry ->
+            val modelId = backStackEntry.arguments?.getString("modelId") ?: "qwen_chat_1b"
+            ChatScreen(
+                modelId = modelId,
+                navController = navController,
+            )
+        }
+        composable(Screen.Voice.route) {
+            VoiceScreen(
                 navController = navController,
             )
         }

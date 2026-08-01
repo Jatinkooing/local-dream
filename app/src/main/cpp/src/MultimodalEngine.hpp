@@ -18,7 +18,7 @@ namespace ggml {
 namespace llama {
     struct llama_model;
     struct llama_context;
-    
+
     struct ChatMessage {
         std::string role;
         std::string content;
@@ -84,7 +84,7 @@ public:
     void setMaxMemoryLimitBytes(size_t limit_bytes) {
         std::lock_guard<std::mutex> lock(engine_mutex_);
         memory_limit_bytes_ = limit_bytes;
-        std::cout << "[Engine] Configured active RAM threshold: " 
+        std::cout << "[Engine] Configured active RAM threshold: "
                   << (limit_bytes / (1024 * 1024)) << " MB" << std::endl;
     }
 
@@ -93,18 +93,18 @@ public:
      */
     bool loadImageModel(const std::string& filepath) {
         std::lock_guard<std::mutex> lock(engine_mutex_);
-        
+
         // Ensure other heavy models are unloaded to free memory
         freeActiveModelExcept(ActiveModel::ImageDiffusion);
 
         std::cout << "[Engine] Loading Image GGUF Model: " << filepath << "..." << std::endl;
-        std::cout << "[Engine] Applying execution context: CPU Threads = " << num_threads_ 
+        std::cout << "[Engine] Applying execution context: CPU Threads = " << num_threads_
                   << ", GPU Offloaded Layers = " << n_gpu_layers_ << std::endl;
-        
+
         // Dynamic loading logic using stable-diffusion.cpp GGUF parser
         image_filepath_ = filepath;
         active_model_ = ActiveModel::ImageDiffusion;
-        
+
         // Simulated successful load
         return true;
     }
@@ -114,13 +114,13 @@ public:
      */
     bool loadChatModel(const std::string& filepath) {
         std::lock_guard<std::mutex> lock(engine_mutex_);
-        
+
         freeActiveModelExcept(ActiveModel::ChatLLM);
 
         std::cout << "[Engine] Loading Chat LLM GGUF Model (use_mmap = true): " << filepath << "..." << std::endl;
-        std::cout << "[Engine] Applying execution context: CPU Threads = " << num_threads_ 
+        std::cout << "[Engine] Applying execution context: CPU Threads = " << num_threads_
                   << ", GPU Offloaded Layers = " << n_gpu_layers_ << std::endl;
-        
+
         // Optimizing llama.cpp parameters for 5GB RAM:
         // 1. use_mmap = true: maps weights directly to memory to let the OS manage paging seamlessly.
         // 2. kv_cache_type = q4_0 / q8_0: quantizes Key-Value cache to save massive RAM during conversation context.
@@ -135,13 +135,13 @@ public:
      */
     bool loadAudioModel(const std::string& filepath) {
         std::lock_guard<std::mutex> lock(engine_mutex_);
-        
+
         freeActiveModelExcept(ActiveModel::AudioSpeech);
 
         std::cout << "[Engine] Loading Whisper GGUF Model: " << filepath << "..." << std::endl;
-        std::cout << "[Engine] Applying execution context: CPU Threads = " << num_threads_ 
+        std::cout << "[Engine] Applying execution context: CPU Threads = " << num_threads_
                   << ", GPU Offloaded Layers = " << n_gpu_layers_ << std::endl;
-        
+
         audio_filepath_ = filepath;
         active_model_ = ActiveModel::AudioSpeech;
 
@@ -159,11 +159,11 @@ public:
         }
 
         std::cout << "[Engine] Generating image with prompt: \"" << params.prompt << "\"" << std::endl;
-        
+
         // Run generation loop
         for (int i = 1; i <= params.steps; ++i) {
             // Simulate step time
-            std::this_thread::sleep_for(std::chrono::milliseconds(80)); 
+            std::this_thread::sleep_for(std::chrono::milliseconds(80));
             if (progress_callback) {
                 progress_callback(i, params.steps);
             }
@@ -188,8 +188,8 @@ public:
 
         // Streaming logic: reads token by token from llama.cpp generator
         std::vector<std::string> mock_response_tokens = {
-            "Yes! ", "Running ", "local ", "AI ", "models ", "directly ", "on ", 
-            "your ", "mobile ", "device ", "is ", "now ", "blazing ", "fast ", 
+            "Yes! ", "Running ", "local ", "AI ", "models ", "directly ", "on ",
+            "your ", "mobile ", "device ", "is ", "now ", "blazing ", "fast ",
             "and ", "memory ", "efficient ", "thanks ", "to ", "GGUF ", "quantization."
         };
 
@@ -214,15 +214,15 @@ public:
         }
 
         std::cout << "[Engine] Transcribing spoken audio..." << std::endl;
-        
+
         // Mock transcription
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
         return "Local AI makes on-device intelligence private and lightning fast.";
     }
 
 private:
-    MultimodalEngine() 
-        : active_model_(ActiveModel::None), 
+    MultimodalEngine()
+        : active_model_(ActiveModel::None),
           memory_limit_bytes_(1610612736), // Default limit: 1.5GB
           num_threads_(4),
           n_gpu_layers_(16)
