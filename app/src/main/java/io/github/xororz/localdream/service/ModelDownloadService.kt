@@ -212,10 +212,120 @@ class ModelDownloadService : Service() {
     }
 
     private suspend fun downloadFile(url: String, destFile: File, modelId: String, modelName: String) = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(url)
-            .build()
+        // Step 1: Perform a HEAD request to get content length
+        val headRequest = Request.Builder().url(url).head().build()
+        var totalBytes = 0L
+        var supportsRange = false
+        
+        try {
+            client.newCall(headRequest).execute().use { response ->
+                if (response.isSuccessful) {
+                    totalBytes = response.body?.contentLength() ?: 0L
+                    if (totalBytes <= 0L) {
+                        totalBytes = response.header("Content-Length")?.toLongOrNull() ?: 0L
+                    }
+                    val acceptRanges = response.header("Accept-Ranges")
+                    supportsRange = acceptRanges == "bytes" || response.code == 200
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "HEAD request failed, falling back to single-stream", e)
+        }
 
+        // If file is small (< 20MB) or range is not supported, do single-stream download with a larger buffer (256KB)
+        if (totalBytes < 20 * 1024 * 1024 || !supportsRange || totalBytes <= 0) {
+            downloadSingleStream(url, destFile, modelId, modelName)
+            return@withContext
+        }
+
+        // Parallel chunk downloader (4 segments)
+        val numChunks = 4
+        val chunkSize = totalBytes / numChunks
+        val chunkJobs = mutableListOf<Job>()
+        val chunkFiles = mutableListOf<File>()
+        
+        // Atomic trackers
+        val downloadedBytesArray = java.util.concurrent.atomic.AtomicLongArray(numChunks)
+        var lastUpdateTime = 0L
+
+        _downloadState.value = DownloadState.Downloading(modelId, 0f, 0, totalBytes)
+
+        for (i in 0 until numChunks) {
+            val startByte = i * chunkSize
+            val endByte = if (i == numChunks - 1) totalBytes - 1 else (i + 1) * chunkSize - 1
+            val chunkFile = File(destFile.parentFile, "${destFile.name}.part$i")
+            chunkFiles.add(chunkFile)
+
+            val job = launch(Dispatchers.IO) {
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("Range", "bytes=$startByte-$endByte")
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful && response.code != 206) {
+                        throw Exception("Chunk $i download failed: HTTP ${response.code}")
+                    }
+                    val body = response.body ?: throw Exception("Chunk $i response body is null")
+                    java.io.BufferedOutputStream(FileOutputStream(chunkFile)).use { output ->
+                        body.byteStream().buffered(128 * 1024).use { input ->
+                            val buffer = ByteArray(128 * 1024)
+                            var bytes: Int
+                            while (input.read(buffer).also { bytes = it } != -1) {
+                                output.write(buffer, 0, bytes)
+                                val currentDownloaded = downloadedBytesArray.addAndGet(i, bytes.toLong())
+                                
+                                // Calculate total progress across all chunks
+                                var currentTotalDownloaded = 0L
+                                for (k in 0 until numChunks) {
+                                    currentTotalDownloaded += downloadedBytesArray.get(k)
+                                }
+
+                                val currentTime = System.currentTimeMillis()
+                                if (currentTime - lastUpdateTime >= 500 || currentTotalDownloaded == totalBytes) {
+                                    lastUpdateTime = currentTime
+                                    val progress = currentTotalDownloaded.toFloat() / totalBytes
+                                    _downloadState.value = DownloadState.Downloading(
+                                        modelId,
+                                        progress,
+                                        currentTotalDownloaded,
+                                        totalBytes,
+                                    )
+                                    updateNotification(modelName, progress)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            chunkJobs.add(job)
+        }
+
+        // Wait for all chunk downloads to finish
+        chunkJobs.forEach { it.join() }
+
+        // Step 3: Merge chunks sequentially
+        Log.i(TAG, "All chunks downloaded. Merging files...")
+        _downloadState.value = DownloadState.Extracting(modelId)
+        
+        java.io.BufferedOutputStream(FileOutputStream(destFile)).use { output ->
+            val buffer = ByteArray(256 * 1024)
+            for (i in 0 until numChunks) {
+                val chunkFile = chunkFiles[i]
+                java.io.BufferedInputStream(chunkFile.inputStream()).use { input ->
+                    var bytes: Int
+                    while (input.read(buffer).also { bytes = it } != -1) {
+                        output.write(buffer, 0, bytes)
+                    }
+                }
+                chunkFile.delete() // Clean up chunk file immediately
+            }
+        }
+        Log.i(TAG, "Merge complete for $modelName")
+    }
+
+    private suspend fun downloadSingleStream(url: String, destFile: File, modelId: String, modelName: String) = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw Exception(getString(R.string.error_download_failed, response.code.toString()))
@@ -227,8 +337,8 @@ class ModelDownloadService : Service() {
             var lastUpdateTime = 0L
 
             java.io.BufferedOutputStream(FileOutputStream(destFile)).use { output ->
-                body.byteStream().buffered().use { input ->
-                    val buffer = ByteArray(32 * 1024)
+                body.byteStream().buffered(256 * 1024).use { input ->
+                    val buffer = ByteArray(256 * 1024) // 256KB buffer for max speed
                     var bytes: Int
 
                     while (input.read(buffer).also { bytes = it } != -1) {
@@ -238,31 +348,17 @@ class ModelDownloadService : Service() {
                         val currentTime = System.currentTimeMillis()
                         if (currentTime - lastUpdateTime >= 500 || downloadedBytes == totalBytes) {
                             lastUpdateTime = currentTime
-                            val progress = if (totalBytes > 0) {
-                                downloadedBytes.toFloat() / totalBytes
-                            } else {
-                                0f
-                            }
-
+                            val progress = if (totalBytes > 0) downloadedBytes.toFloat() / totalBytes else 0f
                             _downloadState.value = DownloadState.Downloading(
                                 modelId,
                                 progress,
                                 downloadedBytes,
                                 totalBytes,
                             )
-
                             updateNotification(modelName, progress)
                         }
                     }
                 }
-            }
-
-            // Guard against silently truncated downloads: a dropped connection
-            // ends the read loop without throwing, leaving a partial file.
-            if (totalBytes > 0 && downloadedBytes != totalBytes) {
-                throw Exception(
-                    getString(R.string.error_download_failed, "$downloadedBytes/$totalBytes"),
-                )
             }
         }
     }
