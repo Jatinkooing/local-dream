@@ -182,4 +182,80 @@ APP_ARGS=`save "$@"`
 # Collect all arguments for the java command, following the shell quoting and substitution rules
 eval set -- $DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS "\"-Dorg.gradle.appname=$APP_BASE_NAME\"" -classpath "\"$CLASSPATH\"" org.gradle.wrapper.GradleWrapperMain "$APP_ARGS"
 
+# CI diagnostics: capture the build output so that, on failure, compiler and
+# linter errors can be re-emitted as GitHub Actions check annotations (readable
+# through the Checks API even when raw logs are unavailable). Local behavior is
+# unchanged; the exit status is always preserved.
+if [ -n "$CI" ] && command -v python3 >/dev/null 2>&1; then
+    CI_LOG_DIR="$APP_HOME/build/ci"
+    mkdir -p "$CI_LOG_DIR"
+    CI_LOG="$CI_LOG_DIR/gradle-build.log"
+
+    "$JAVACMD" "$@" > "$CI_LOG" 2>&1
+    status=$?
+    cat "$CI_LOG"
+
+    if [ $status -ne 0 ]; then
+        GRADLE_CI_LOG="$CI_LOG" python3 - "$APP_HOME" <<'PYEOF'
+import os, re, sys
+
+repo_root = sys.argv[1]
+with open(os.environ["GRADLE_CI_LOG"], "r", errors="replace") as fh:
+    lines = fh.read().splitlines()
+
+def esc_prop(s):
+    return (s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+             .replace(":", "%3A").replace(",", "%2C"))
+
+def esc_msg(s):
+    return s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+def relpath(p):
+    if p.startswith(repo_root):
+        p = p[len(repo_root):].lstrip("/")
+    # strip GitHub Actions workspace prefix like /home/runner/work/repo/repo/
+    m = re.search(r"/work/[^/]+/[^/]+/(.+)$", p)
+    if m:
+        return m.group(1)
+    return p
+
+annotations = []
+kotlin_re = re.compile(r"^e:\s+file://(.+?):(\d+):(\d+)\s+(.*)$")
+javac_re = re.compile(r"^(.+?\.(?:java|kt)):(\d+):\s*error:\s*(.*)$")
+seen = set()
+
+for ln in lines:
+    m = kotlin_re.match(ln) or javac_re.match(ln)
+    if m:
+        if m.re is kotlin_re:
+            path, row, col, msg = m.group(1), m.group(2), m.group(3), m.group(4)
+        else:
+            path, row, col, msg = m.group(1), m.group(2), "1", m.group(3)
+        key = (path, row, msg)
+        if key in seen:
+            continue
+        seen.add(key)
+        annotations.append(
+            "::error file={},line={},col={},title=Compile error in {}::{}".format(
+                esc_prop(relpath(path)), row, col,
+                esc_prop(os.path.basename(path)), esc_msg(msg.strip())[:3800]))
+    if len(annotations) >= 40:
+        break
+
+failure_idx = next((i for i, ln in enumerate(lines) if ln.startswith("FAILURE:")), None)
+if failure_idx is not None:
+    tail = "\n".join(lines[failure_idx:failure_idx + 40])
+    annotations.append("::error title=Gradle failure detail::" + esc_msg(tail)[:3800])
+
+tail = "\n".join(lines[-25:])
+annotations.append("::error title=Gradle log tail::" + esc_msg(tail)[:3800])
+
+for a in annotations:
+    print(a)
+PYEOF
+    fi
+
+    exit $status
+fi
+
 exec "$JAVACMD" "$@"
