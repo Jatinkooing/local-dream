@@ -244,10 +244,10 @@ for ln in lines:
 
 failure_idx = next((i for i, ln in enumerate(lines) if ln.startswith("FAILURE:")), None)
 if failure_idx is not None:
-    tail = "\n".join(lines[failure_idx:failure_idx + 40])
-    annotations.append("::error title=Gradle failure detail::" + esc_msg(tail)[:3800])
+    tail = "\n".join(lines[failure_idx:failure_idx + 80])
+    annotations.append("::error title=Gradle failure detail::" + esc_msg(tail)[:8000])
 
-tail = "\n".join(lines[-150:])
+tail = "\n".join(lines[-300:])
 annotations.append("::error title=Gradle log tail::" + esc_msg(tail)[:8000])
 
 for a in annotations:

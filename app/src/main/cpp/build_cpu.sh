@@ -7,10 +7,9 @@ cd "$SCRIPT_DIR"
 
 echo "[build_cpu.sh] PWD: $(pwd)"
 echo "[build_cpu.sh] Env: ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-unset} ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-unset} ANDROID_HOME=${ANDROID_HOME:-unset} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset} HOME=${HOME}"
-ls -la
+ls -la || true
 ls -la 3rdparty/ || true
 
-# Find NDK: $ANDROID_NDK_ROOT -> newest $SDK_ROOT/ndk/* -> sdkmanager "ndk;27.2.12479018"
 find_ndk() {
   if [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ] && [ -f "$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" ]; then
     echo "$ANDROID_NDK_ROOT"
@@ -29,8 +28,6 @@ find_ndk() {
 
   echo "[build_cpu.sh] Searching SDK candidates: ${SDK_CANDIDATES[*]}" >&2
   for SDK in "${SDK_CANDIDATES[@]}"; do
-    echo "[build_cpu.sh] Checking $SDK" >&2
-    ls -la "$SDK" 2>&1 | head -n 20 >&2 || true
     if [ -d "$SDK/ndk" ]; then
       ls -la "$SDK/ndk" >&2 || true
       LATEST=$(ls -1 "$SDK/ndk" 2>/dev/null | sort -V | tail -n1)
@@ -55,21 +52,18 @@ find_ndk() {
       fi
     done
   else
-    echo "[build_cpu.sh] sdkmanager not found in PATH" >&2
-    which sdkmanager 2>&1 || true
-    echo "PATH=$PATH" >&2
+    echo "[build_cpu.sh] sdkmanager not found" >&2
   fi
-
   return 1
 }
 
 NDK_ROOT=$(find_ndk) || {
-  echo "[build_cpu.sh] ERROR: Android NDK not found. Set ANDROID_NDK_ROOT or install ndk;27.2.12479018 via sdkmanager." >&2
+  echo "[build_cpu.sh] ERROR: Android NDK not found" >&2
   exit 1
 }
 
 echo "[build_cpu.sh] Using NDK: $NDK_ROOT"
-ls -la "$NDK_ROOT" | head -n 20
+ls -la "$NDK_ROOT" | head -n 20 || true
 
 TOOLCHAIN="$NDK_ROOT/build/cmake/android.toolchain.cmake"
 if [ ! -f "$TOOLCHAIN" ]; then
@@ -79,7 +73,6 @@ fi
 
 mkdir -p build/cpu
 
-# Configure with verbose output
 echo "[build_cpu.sh] Configuring CMake (AIROND_CPU_ONLY=ON)..."
 set +e
 cmake -S . -B build/cpu \
@@ -96,30 +89,43 @@ CONF_STATUS=${PIPESTATUS[0]}
 cat build/cpu/configure.log
 if [ $CONF_STATUS -ne 0 ]; then
   echo "[build_cpu.sh] CMake configure failed with $CONF_STATUS" >&2
+  echo "::error title=CMake configure failed::Configure failed with $CONF_STATUS"
   cat build/cpu/CMakeFiles/CMakeOutput.log 2>&1 | tail -n 200 || true
-  cat build/cpu/CMakeFiles/CMakeError.log 2>&1 | tail -n 500 || true
+  cat build/cpu/CMakeFiles/CMakeError.log 2>&1 | tail -n 800 || true
+  # Emit annotation with error log
+  ERR=$(tail -n 300 build/cpu/CMakeFiles/CMakeError.log 2>/dev/null | tr '%' '%25' | tr '\r' ' ' | tr '\n' '%0A' | cut -c1-4000)
+  echo "::error title=CMakeError.log tail::$ERR"
   exit 2
 fi
 set -e
 
-# Build
 echo "[build_cpu.sh] Building native lib (parallel 2)..."
 set +e
-cmake --build build/cpu --parallel 2 --verbose 2>&1 | tee build/cpu/build.log
+cmake --build build/cpu --parallel 2 2>&1 | tee build/cpu/build.log
 BUILD_STATUS=${PIPESTATUS[0]}
-echo "[build_cpu.sh] Build finished with status $BUILD_STATUS, last 200 lines:"
-tail -n 200 build/cpu/build.log
+echo "[build_cpu.sh] Build finished with status $BUILD_STATUS"
+tail -n 400 build/cpu/build.log
 if [ $BUILD_STATUS -ne 0 ]; then
-  echo "[build_cpu.sh] Build failed" >&2
+  echo "[build_cpu.sh] Build failed, last 500 lines:" >&2
+  tail -n 500 build/cpu/build.log >&2 || true
+  echo "[build_cpu.sh] Searching for 'error:' in build log:" >&2
+  grep -i "error:" build/cpu/build.log | tail -n 200 >&2 || true
+  # Emit annotation with build log tail
+  TAIL=$(tail -n 500 build/cpu/build.log | tr '%' '%25' | tr '\r' ' ' | tr '\n' '%0A' | cut -c1-8000)
+  echo "::error title=Native build failed (tail 500)::$TAIL"
+  # Also try to find specific error lines
+  GREP_ERR=$(grep -i "error:" build/cpu/build.log | tail -n 100 | tr '%' '%25' | tr '\r' ' ' | tr '\n' '%0A' | cut -c1-8000)
+  if [ -n "$GREP_ERR" ]; then
+    echo "::error title=Native build errors::$GREP_ERR"
+  fi
   exit 2
 fi
 set -e
 
-# Locate built .so
 BUILT_SO=$(find build/cpu -name "libstable_diffusion_core.so" -type f | head -n1)
 if [ -z "$BUILT_SO" ]; then
-  echo "[build_cpu.sh] ERROR: Built .so not found under build/cpu" >&2
-  find build/cpu -type f 2>&1 | head -n 100 >&2 || true
+  echo "[build_cpu.sh] ERROR: Built .so not found" >&2
+  find build/cpu -type f | head -n 100 >&2 || true
   exit 1
 fi
 
