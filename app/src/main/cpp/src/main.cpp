@@ -11,19 +11,24 @@
 
 #include "Config.hpp"
 #include "MnnUtils.hpp"
+#ifdef AIROND_CPU_ONLY
+#include "Pipeline.hpp"
+#include "PipelineSd15Cpu.hpp"
+#else
 #include "Pipeline.hpp"
 #include "PipelineAnima.hpp"
 #include "PipelineSd15Cpu.hpp"
 #include "PipelineSd15Npu.hpp"
 #include "PipelineSdxl.hpp"
 #include "QnnRuntime.hpp"
+#endif
 #include "RequestParser.hpp"
 #include "SDUtils.hpp"
 #include "SafeTensor2MNN.hpp"
 #include "TextEncoder.hpp"
 #include "Upscaler.hpp"
 
-// QNN Headers
+// QNN Headers (real SDK or cpu_shim stubs)
 #include "BuildId.hpp"
 #include "Logger.hpp"
 #include "PAL/GetOpt.hpp"
@@ -241,6 +246,13 @@ static ServerOptions processCommandLine(int argc, char **argv) {
 
   if (opts.upscaler_mode || opts.multimodal_mode || opts.convert_mode) return opts;
 
+#ifdef AIROND_CPU_ONLY
+  if (typeStr == "sd15cpu")
+    opts.type = ServerOptions::ModelType::kSd15Cpu;
+  else
+    showHelpAndExit(typeStr.empty() ? "Missing --type"
+                                    : "Invalid --type for CPU-only build (only sd15cpu supported): " + typeStr);
+#else
   if (typeStr == "sd15cpu")
     opts.type = ServerOptions::ModelType::kSd15Cpu;
   else if (typeStr == "sdxl")
@@ -252,6 +264,7 @@ static ServerOptions processCommandLine(int argc, char **argv) {
   else
     showHelpAndExit(typeStr.empty() ? "Missing --type"
                                     : "Invalid --type: " + typeStr);
+#endif
   if (opts.model_dir.empty()) showHelpAndExit("Missing --model_dir");
   return opts;
 }
@@ -301,6 +314,32 @@ static void runConvertMode(const ServerOptions &opts) {
 static std::unique_ptr<Pipeline> createPipeline(const ServerOptions &opts,
                                                 TextEncoder &text_encoder) {
   const std::filesystem::path dir(opts.model_dir);
+#ifdef AIROND_CPU_ONLY
+  if (opts.type != ServerOptions::ModelType::kSd15Cpu) {
+    showHelpAndExit("Only sd15cpu supported in CPU-only build");
+  }
+  std::string clip_path = (dir / "clip_v2.mnn").string();
+  std::string unet_path = (dir / "unet.mnn").string();
+  std::string vae_decoder_path = (dir / "vae_decoder.mnn").string();
+  std::string vae_encoder_path =
+      opts.no_img2img ? "" : (dir / "vae_encoder.mnn").string();
+
+  std::vector<std::string> required = {
+      (dir / "tokenizer.json").string(),
+      clip_path,
+      unet_path,
+      vae_decoder_path,
+      (dir / "pos_emb.bin").string(),
+      (dir / "token_emb.bin").string(),
+  };
+  if (!vae_encoder_path.empty()) required.push_back(vae_encoder_path);
+  for (const auto &p : required) {
+    if (!std::filesystem::exists(p)) showHelpAndExit("File not found: " + p);
+  }
+  return std::make_unique<PipelineSd15Cpu>(
+      text_encoder, opts.model_dir, clip_path, unet_path, vae_decoder_path,
+      vae_encoder_path, opts.use_v_pred);
+#else
   const bool sdxl = opts.isSdxl();
   const bool anima = opts.isAnima();
 
@@ -375,6 +414,7 @@ static std::unique_ptr<Pipeline> createPipeline(const ServerOptions &opts,
           text_encoder, opts.model_dir, clip_path, clip2_path, unet_path,
           vae_decoder_path, vae_encoder_path, opts.use_v_pred, opts.lowram);
   }
+#endif
 }
 
 // Encodes the final image per the requested wire format and wraps it base64.
@@ -509,7 +549,9 @@ static void registerGenerateEndpoint(httplib::Server &svr, Pipeline *pipeline) {
 // Binary protocol upscale endpoint - optimized for performance.
 static void registerUpscaleEndpoint(httplib::Server &svr) {
   svr.Post("/upscale", [](const httplib::Request &req, httplib::Response &res) {
+#ifndef AIROND_CPU_ONLY
     std::unique_ptr<QnnModel> tempUpscalerApp = nullptr;
+#endif
 
     try {
       if (!req.has_header("X-Image-Width")) {
@@ -534,12 +576,16 @@ static void registerUpscaleEndpoint(httplib::Server &svr) {
       }
 
       // Determine model type based on file extension.
+#ifdef AIROND_CPU_ONLY
+      bool is_mnn_model = true;
+#else
       bool is_mnn_model = false;
       if (upscaler_path.size() >= 4) {
         std::string ext = upscaler_path.substr(upscaler_path.size() - 4);
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         is_mnn_model = (ext == ".mnn");
       }
+#endif
 
       QNN_INFO("Binary upscale request: %dx%d, upscaler: %s, type: %s%s",
                original_width, original_height, upscaler_path.c_str(),
@@ -575,6 +621,11 @@ static void registerUpscaleEndpoint(httplib::Server &svr) {
 
       xt::xarray<uint8_t> upscaled;
 
+#ifdef AIROND_CPU_ONLY
+      upscaled =
+          upscaler::upscaleWithMnn(process_image, process_width,
+                                   process_height, upscaler_path, use_opencl);
+#else
       if (is_mnn_model) {
         upscaled =
             upscaler::upscaleWithMnn(process_image, process_width,
@@ -594,6 +645,7 @@ static void registerUpscaleEndpoint(httplib::Server &svr) {
         upscaled = upscaler::upscaleWithQnn(process_image, process_width,
                                             process_height, tempUpscalerApp);
       }
+#endif
 
       auto end_time = std::chrono::high_resolution_clock::now();
       int duration = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -639,13 +691,17 @@ static void registerUpscaleEndpoint(httplib::Server &svr) {
       res.set_header("Access-Control-Expose-Headers",
                      "X-Output-Width,X-Output-Height,X-Duration-Ms");
 
+#ifndef AIROND_CPU_ONLY
       if (tempUpscalerApp) {
         tempUpscalerApp.reset();
         QNN_INFO("Upscaler model released");
       }
+#endif
 
     } catch (const std::invalid_argument &e) {
+#ifndef AIROND_CPU_ONLY
       tempUpscalerApp.reset();
+#endif
       nlohmann::json err = {
           {"error",
            {{"message", "Invalid Arg: " + std::string(e.what())},
@@ -653,7 +709,9 @@ static void registerUpscaleEndpoint(httplib::Server &svr) {
       res.status = 400;
       res.set_content(err.dump(), "application/json");
     } catch (const std::exception &e) {
+#ifndef AIROND_CPU_ONLY
       tempUpscalerApp.reset();
+#endif
       nlohmann::json err = {
           {"error",
            {{"message", "Server Err: " + std::string(e.what())},
@@ -908,9 +966,11 @@ int main(int argc, char **argv) {
                  : "Upscaler mode - skipping MNN and QNN model initialization");
     // QNN upscalers need --lib_dir; MNN-only upscaling and the (CPU-first)
     // multimodal GGUF runtime run fine without it.
+#ifndef AIROND_CPU_ONLY
     if (opts.upscaler_mode && !opts.lib_dir.empty() &&
         !qnn_runtime::init(opts.lib_dir))
       showHelpAndExit("Failed get QNN system func ptrs.");
+#endif
     g_multimodal_model_dir = opts.model_dir;
   } else {
     text_encoder = std::make_unique<TextEncoder>(opts.isSdxl(), opts.isAnima());
@@ -968,11 +1028,13 @@ int main(int argc, char **argv) {
                                  opts.nsfw_threshold);
     }
 
+#ifndef AIROND_CPU_ONLY
     if (!opts.isMnn()) {
       if (opts.lib_dir.empty()) showHelpAndExit("Missing --lib_dir for QNN");
       if (!qnn_runtime::init(opts.lib_dir))
         showHelpAndExit("Failed get QNN system func ptrs.");
     }
+#endif
 
     if (!pipeline->initialize()) {
       std::cerr << "ERROR: Pipeline initialization failed!\n";

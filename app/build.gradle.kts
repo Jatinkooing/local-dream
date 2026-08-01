@@ -107,6 +107,22 @@ android {
     }
 }
 
+val isLinuxHost = System.getProperty("os.name").lowercase(java.util.Locale.getDefault()).contains("linux")
+
+tasks.register<Exec>("buildNativeBackend") {
+    onlyIf {
+        isLinuxHost && !file("src/main/jniLibs/arm64-v8a/libstable_diffusion_core.so").exists()
+    }
+    workingDir = file("src/main/cpp")
+    commandLine("bash", "build_cpu.sh")
+}
+
+tasks.named("preBuild") {
+    if (isLinuxHost) {
+        dependsOn("buildNativeBackend")
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)

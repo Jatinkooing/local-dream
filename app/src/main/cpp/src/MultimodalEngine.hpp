@@ -9,6 +9,13 @@
 #include <thread>
 #include <functional>
 
+#ifdef AIROND_CPU_ONLY
+// CPU-only build: MultimodalEngine is a lightweight mock without QNN deps.
+// Real GGUF backends would be linked here; stub keeps CI packaging green.
+#else
+// Full build could include QNN/GGML headers here if needed.
+#endif
+
 // Mocking GGML / llama.cpp / stable-diffusion.cpp headers
 // In a full production environment, these headers are included directly from the submodules.
 namespace ggml {

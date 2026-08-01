@@ -153,3 +153,42 @@ native C++ server:
 and, on failure, re-emits Kotlin/javac errors plus the failure summary as
 GitHub check annotations (`::error` workflow commands), so build breaks stay
 diagnosable even when raw job logs are unavailable.
+
+### CI Native Packaging (airound v3.3.0)
+
+Every CI-built APK previously shipped with **no** `libstable_diffusion_core.so`
+at all — `app/src/main/jniLibs` is gitignored and the workflow only ran
+`./gradlew assembleDebug`. The app therefore showed
+"Failed to connect to 127.0.0.1:8081" then "Backend start failed" on every
+device (not an NPU-vs-CPU issue).
+
+**Fix — lives entirely in Gradle/CMake/Kotlin (workflow file cannot be touched):**
+
+1. **CMake option `AIROND_CPU_ONLY=ON`** — when ON, skips all QAIRT
+   (`/data/qairt/...`) file copies, `SampleApp` copy/patch, QNN include dirs
+   and NPU/upscaler sources; adds `cpu_shim/include` to the include path;
+   builds from `src/main.cpp` only; keeps MNN/zstd/tokenizers-cpp/httplib/json/stb.
+
+2. **`cpu_shim/include/` header-only QNN stubs** — `Logger.hpp` (macros + `QnnLog_Level_t` + `qnn::log::initializeLogging/setLogLevel`),
+   `BuildId.hpp` (`getBuildId()`), `QnnSampleAppUtils.hpp` (`parseLogLevel`, `ProfilingLevel`, `StatusCode`),
+   `PAL/GetOpt.hpp` (minimal `getOptLongOnly` + `g_optArg`) — g++-verified.
+
+3. **`AIROND_CPU_ONLY` guards** in `main.cpp` (`--type sd15cpu` only, `createPipeline` CPU path,
+   upscale endpoint `tempUpscalerApp` / `qnn_runtime::createModel` stripped, `qnn_runtime::init` x2 guarded),
+   `Upscaler.hpp` (QNN include + `upscaleWithQnn` stripped) and `MultimodalEngine.hpp`.
+
+4. **`build_cpu.sh`** (executable): finds NDK (`$ANDROID_NDK_ROOT` → newest `$SDK_ROOT/ndk/*` → `sdkmanager "ndk;27.2.12479018"`),
+   `cmake` configure with NDK toolchain `arm64-v8a/android-21/c++_static/Release/AIROND_CPU_ONLY=ON/CMAKE_POLICY_VERSION_MINIMUM=3.5`,
+   `cmake --build build/cpu --parallel 2`, copies `.so` to `../jniLibs/arm64-v8a/`.
+
+5. **`build.gradle.kts`**: `buildNativeBackend` Exec task (`onlyIf` .so missing, `workingDir src/main/cpp`, `bash build_cpu.sh`)
+   wired into `preBuild`, Linux-hosts-only guard (`isLinuxHost`).
+
+6. **`BackendService.kt`**: specific error
+   "Native engine missing from this build (libstable_diffusion_core.so was not packaged into the APK)"
+   when the executable is absent; `reconcile()` prefers a specific `Error` over the generic fallback.
+
+Result: CI now produces APKs containing `lib/arm64-v8a/libstable_diffusion_core.so`
+for both flavors; on non-NPU Snapdragon phones, users must select "(CPU)" model variants
+(e.g. Absolute Reality (CPU)) — NPU model cards stay gated by `isDeviceSupported()`.
+

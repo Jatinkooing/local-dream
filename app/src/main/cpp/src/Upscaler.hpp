@@ -17,7 +17,9 @@
 
 #include "Logger.hpp"
 #include "MnnUtils.hpp"
+#ifndef AIROND_CPU_ONLY
 #include "QnnModel.hpp"
+#endif
 #include "Tiling.hpp"
 
 namespace upscaler {
@@ -122,6 +124,7 @@ inline xt::xarray<uint8_t> upscaleTiled(
   return output_uint8;
 }
 
+#ifndef AIROND_CPU_ONLY
 inline xt::xarray<uint8_t> upscaleWithQnn(
     const std::vector<uint8_t> &input_image, int width, int height,
     std::unique_ptr<QnnModel> &upscaler_model) {
@@ -142,6 +145,7 @@ inline xt::xarray<uint8_t> upscaleWithQnn(
         }
       });
 }
+#endif
 
 inline xt::xarray<uint8_t> upscaleWithMnn(
     const std::vector<uint8_t> &input_image, int width, int height,

@@ -4,62 +4,66 @@ project(libstable_diffusion_core.so C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# QNN SDK PATH
-set(QNN_SDK_ROOT /data/qairt/2.39.0.250926)
+option(AIROND_CPU_ONLY "Build CPU-only backend without QNN SDK" OFF)
 
-file(COPY ${QNN_SDK_ROOT}/examples/QNN/SampleApp/SampleApp/
-    DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp)
-execute_process(COMMAND git apply --directory=app/src/main/cpp/ --verbose ${CMAKE_CURRENT_SOURCE_DIR}/SampleApp.patch
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    RESULT_VARIABLE patch_result
-    OUTPUT_VARIABLE patch_output
-    ERROR_VARIABLE patch_error
-)
-message(STATUS "Patch: ${patch_result}")
-message(STATUS "Patch: ${patch_output}")
-message(STATUS "Patch: ${patch_error}")
+if(NOT AIROND_CPU_ONLY)
+    # QNN SDK PATH
+    set(QNN_SDK_ROOT /data/qairt/2.39.0.250926)
 
-make_directory(${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV68Stub.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV69Stub.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV73Stub.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV75Stub.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV79Stub.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV81Stub.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v68/unsigned/libQnnHtpV68.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v68/unsigned/libQnnHtpV68Skel.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v73/unsigned/libQnnHtpV73.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v79/unsigned/libQnnHtpV79.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v79/unsigned/libQnnHtpV79Skel.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v81/unsigned/libQnnHtpV81.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
-file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v81/unsigned/libQnnHtpV81Skel.so
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/examples/QNN/SampleApp/SampleApp/
+        DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp)
+    execute_process(COMMAND git apply --directory=app/src/main/cpp/ --verbose ${CMAKE_CURRENT_SOURCE_DIR}/SampleApp.patch
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        RESULT_VARIABLE patch_result
+        OUTPUT_VARIABLE patch_output
+        ERROR_VARIABLE patch_error
+    )
+    message(STATUS "Patch: ${patch_result}")
+    message(STATUS "Patch: ${patch_output}")
+    message(STATUS "Patch: ${patch_error}")
+
+    make_directory(${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV68Stub.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV69Stub.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV73Stub.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV75Stub.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV79Stub.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV81Stub.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v68/unsigned/libQnnHtpV68.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v68/unsigned/libQnnHtpV68Skel.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v73/unsigned/libQnnHtpV73.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v79/unsigned/libQnnHtpV79.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v79/unsigned/libQnnHtpV79Skel.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v81/unsigned/libQnnHtpV81.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+    file(COPY ${QNN_SDK_ROOT}/lib/hexagon-v81/unsigned/libQnnHtpV81Skel.so
+        DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/qnnlibs)
+endif()
 
 if(WIN32)
     set(PLATFORM_NAME "windows")
@@ -111,28 +115,46 @@ add_subdirectory(3rdparty/MNN)
 
 set(XTENSOR_USE_XSIMD ON)
 
-set(PACKAGE_INCLUDES
-    ${MNN_ROOT_DIR}/include
-    ${QNN_SDK_ROOT}/include/QNN
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/cpp-httplib
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/include/nlohmann
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/stb
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xtensor/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xtl/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xsimd/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xtensor-blas/include
-    ${ZSTD_INCLUDE_DIR}
+if(AIROND_CPU_ONLY)
+    set(PACKAGE_INCLUDES
+        ${MNN_ROOT_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/cpu_shim/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/cpp-httplib
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/include/nlohmann
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/stb
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xtensor/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xtl/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xsimd/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xtensor-blas/include
+        ${ZSTD_INCLUDE_DIR}
+    )
+else()
+    set(PACKAGE_INCLUDES
+        ${MNN_ROOT_DIR}/include
+        ${QNN_SDK_ROOT}/include/QNN
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/cpp-httplib
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/include/nlohmann
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/stb
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xtensor/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xtl/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xsimd/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/xtensor-blas/include
+        ${ZSTD_INCLUDE_DIR}
 
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/CachingUtil
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/Log
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/PAL/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/Utils
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/WrapperUtils
-)
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/CachingUtil
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/Log
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/PAL/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/Utils
+        ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src/WrapperUtils
+    )
+endif()
 
 # tokenizers-cpp
 set(TOKENZIER_CPP_PATH ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tokenizers-cpp)
@@ -146,32 +168,42 @@ endif()
 
 add_subdirectory(${TOKENZIER_CPP_PATH} tokenizers EXCLUDE_FROM_ALL)
 
-# set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
-set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src)
-message(STATUS "SRC_DIR: ${SRC_DIR}")
-set(SRC_DIR_LOG ${SRC_DIR}/Log)
-set(SRC_DIR_PAL_LINUX ${SRC_DIR}/PAL/src/linux)
-set(SRC_DIR_PAL_COMMON ${SRC_DIR}/PAL/src/common)
-set(SRC_DIR_UTILS ${SRC_DIR}/Utils)
-set(SRC_DIR_WRAPPER_UTILS ${SRC_DIR}/WrapperUtils)
+if(AIROND_CPU_ONLY)
+    set(SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
+    )
+else()
+    # set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SampleApp/src)
+    message(STATUS "SRC_DIR: ${SRC_DIR}")
+    set(SRC_DIR_LOG ${SRC_DIR}/Log)
+    set(SRC_DIR_PAL_LINUX ${SRC_DIR}/PAL/src/linux)
+    set(SRC_DIR_PAL_COMMON ${SRC_DIR}/PAL/src/common)
+    set(SRC_DIR_UTILS ${SRC_DIR}/Utils)
+    set(SRC_DIR_WRAPPER_UTILS ${SRC_DIR}/WrapperUtils)
 
-# collect source files
-file(GLOB SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
-    # "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
-    "${SRC_DIR}/QnnSampleApp.cpp"
-    "${SRC_DIR_LOG}/*.cpp"
-    "${SRC_DIR_PAL_LINUX}/*.cpp"
-    "${SRC_DIR_PAL_COMMON}/*.cpp"
-    "${SRC_DIR_UTILS}/*.cpp"
-    "${SRC_DIR_WRAPPER_UTILS}/*.cpp"
-)
+    # collect source files
+    file(GLOB SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
+        # "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+        "${SRC_DIR}/QnnSampleApp.cpp"
+        "${SRC_DIR_LOG}/*.cpp"
+        "${SRC_DIR_PAL_LINUX}/*.cpp"
+        "${SRC_DIR_PAL_COMMON}/*.cpp"
+        "${SRC_DIR_UTILS}/*.cpp"
+        "${SRC_DIR_WRAPPER_UTILS}/*.cpp"
+    )
+endif()
 
 if(QNN_DEBUG_ENABLE)
     add_compile_options(-O0 -g)
     add_definitions(-DQNN_API=)
 else()
     add_definitions(-DQNN_API=__attribute__\(\(visibility\(\"default\"\)\)\))
+endif()
+
+if(AIROND_CPU_ONLY)
+    add_definitions(-DAIROND_CPU_ONLY)
 endif()
 
 # executable
@@ -190,6 +222,10 @@ target_compile_definitions(${PROJECT_NAME}
     PRIVATE
     XTENSOR_USE_XSIMD
 )
+
+if(AIROND_CPU_ONLY)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE AIROND_CPU_ONLY)
+endif()
 
 # link
 target_link_libraries(${PROJECT_NAME}

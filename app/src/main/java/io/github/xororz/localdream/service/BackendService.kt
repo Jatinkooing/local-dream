@@ -217,7 +217,16 @@ class BackendService : Service() {
         } else {
             serving = null
             updateServingModelId(null)
-            updateState(BackendState.Error("Backend start failed", want.modelId))
+            // Prefer a specific Error already published by startBackend (e.g. missing .so)
+            // over the generic fallback, so users see the actionable message.
+            val current = StateHolder._backendState.value
+            if (current is BackendState.Error) {
+                if (current.modelId == null) {
+                    updateState(current.copy(modelId = want.modelId))
+                }
+            } else {
+                updateState(BackendState.Error("Backend start failed", want.modelId))
+            }
         }
     }
 
@@ -376,6 +385,12 @@ class BackendService : Service() {
 
             if (!executableFile.exists()) {
                 Log.e(TAG, "error: executable does not exist: ${executableFile.absolutePath}")
+                updateState(
+                    BackendState.Error(
+                        "Native engine missing from this build (libstable_diffusion_core.so was not packaged into the APK)",
+                        modelId,
+                    ),
+                )
                 return false
             }
 
