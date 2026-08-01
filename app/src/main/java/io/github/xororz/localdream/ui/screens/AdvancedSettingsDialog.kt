@@ -373,7 +373,7 @@ internal fun AdvancedSettingsDialog(
                         }
                     }
                 }
-                
+
                 // Smart Hardware Recommendation
                 val context = androidx.compose.ui.platform.LocalContext.current
                 val actManager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager

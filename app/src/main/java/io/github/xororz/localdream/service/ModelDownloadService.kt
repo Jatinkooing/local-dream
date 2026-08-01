@@ -220,7 +220,7 @@ class ModelDownloadService : Service() {
         val headRequest = Request.Builder().url(url).head().build()
         var totalBytes = 0L
         var supportsRange = false
-        
+
         try {
             client.newCall(headRequest).execute().use { response ->
                 if (response.isSuccessful) {
@@ -247,7 +247,7 @@ class ModelDownloadService : Service() {
         val chunkSize = totalBytes / numChunks
         val chunkJobs = mutableListOf<Job>()
         val chunkFiles = mutableListOf<File>()
-        
+
         // Atomic trackers
         val downloadedBytesArray = java.util.concurrent.atomic.AtomicLongArray(numChunks)
         var lastUpdateTime = 0L
@@ -278,7 +278,7 @@ class ModelDownloadService : Service() {
                             while (input.read(buffer).also { bytes = it } != -1) {
                                 output.write(buffer, 0, bytes)
                                 val currentDownloaded = downloadedBytesArray.addAndGet(i, bytes.toLong())
-                                
+
                                 // Calculate total progress across all chunks
                                 var currentTotalDownloaded = 0L
                                 for (k in 0 until numChunks) {
@@ -311,7 +311,7 @@ class ModelDownloadService : Service() {
         // Step 3: Merge chunks sequentially
         Log.i(TAG, "All chunks downloaded. Merging files...")
         _downloadState.value = DownloadState.Extracting(modelId)
-        
+
         java.io.BufferedOutputStream(FileOutputStream(destFile)).use { output ->
             val buffer = ByteArray(256 * 1024)
             for (i in 0 until numChunks) {
