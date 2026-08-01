@@ -35,6 +35,10 @@ class ModelDownloadService : Service() {
     }
 
     private val client = Http.client.newBuilder()
+        .dispatcher(okhttp3.Dispatcher().apply {
+            maxRequests = 32
+            maxRequestsPerHost = 24
+        })
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
@@ -238,8 +242,8 @@ class ModelDownloadService : Service() {
             return@withContext
         }
 
-        // Parallel chunk downloader (4 segments)
-        val numChunks = 4
+        // Parallel chunk downloader (8 segments)
+        val numChunks = 8
         val chunkSize = totalBytes / numChunks
         val chunkJobs = mutableListOf<Job>()
         val chunkFiles = mutableListOf<File>()
