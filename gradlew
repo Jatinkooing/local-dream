@@ -247,8 +247,8 @@ if failure_idx is not None:
     tail = "\n".join(lines[failure_idx:failure_idx + 40])
     annotations.append("::error title=Gradle failure detail::" + esc_msg(tail)[:3800])
 
-tail = "\n".join(lines[-25:])
-annotations.append("::error title=Gradle log tail::" + esc_msg(tail)[:3800])
+tail = "\n".join(lines[-150:])
+annotations.append("::error title=Gradle log tail::" + esc_msg(tail)[:8000])
 
 for a in annotations:
     print(a)
