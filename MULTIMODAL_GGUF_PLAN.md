@@ -116,3 +116,40 @@ To support all three modalities properly, the Jetpack Compose navigation (`Navig
 3. **🎙️ Voice (Speech to Text)**: A simple recording/transcription hub where users tap to speak and copy/share the translated text instantly.
 
 Let's write a C++ model loader & runner file in the project to make these components completely integrated!
+
+---
+
+## ✅ Implementation Status (airound v3.2.0)
+
+The blueprint above is now wired end-to-end between the Compose UI and the
+native C++ server:
+
+| Surface | Endpoint(s) | Integration |
+| --- | --- | --- |
+| `ChatScreen.kt` | `POST /v1/chat/completions` (SSE) | Real OpenAI-compatible token streaming into the AI bubble, live tokens/sec indicator, conversation history (last 12 turns), inline engine/model error reporting. |
+| `VoiceScreen.kt` | `POST /v1/audio/transcriptions` | `AudioRecord` captures 16 kHz mono PCM16 (with runtime `RECORD_AUDIO` flow), the file is posted for Whisper GGUF transcription, then deleted to keep the cache clean. |
+| `HomePortalScreen.kt`, `AdvancedSettingsDialog.kt` → `ModelRunScreen.kt`, `ChatScreen.kt` | `POST /v1/multimodal/config` | CPU-thread / GPU-offload-layer sliders are pushed to the engine debounced; on ≤4.5GB devices a 1.25GB `memory_limit_bytes` budget is included. A live sync-status dot shows engine state. |
+| `BackendService` | process level | `backendType=multimodal` launches `libstable_diffusion_core.so --multimodal_mode`: no diffusion/QNN init, sub-second startup, identical reconciliation logic to the diffusion server. |
+
+### Multimodal model lifecycle
+
+* **Registry:** `Model.modelKind` (`diffusion` / `chat` / `audio`). Built-in
+  entries: `qwen_chat_1b` (Qwen2.5-1.5B Q4_K_M), `llama_chat_3b`
+  (Llama-3.2-3B Q4_K_M), `whisper_tiny_q4_0` (~39MB).
+* **Download:** single `.gguf`/`.bin` payloads use `modelType=gguf`; the file
+  lands in `models/<id>/` under its original name (zip semantics untouched
+  for diffusion models).
+* **Custom imports:** any model directory containing a `*.gguf` file scans in
+  as a multimodal chat model, and tapping it opens the matching workspace
+  (chat → `ChatScreen`, audio → `VoiceScreen`).
+* **RAM safety:** the `MultimodalEngine` singleton keeps exactly one model
+  family resident (`freeActiveModelExcept`), reuses already-resident weights
+  instead of re-mapping them, resolves model names to on-disk GGUF files via
+  `resolveGgufPath`, and honors the configured memory ceiling.
+
+### CI diagnostics
+
+`gradlew` (CI only) tees the Gradle console to `build/ci/gradle-build.log`
+and, on failure, re-emits Kotlin/javac errors plus the failure summary as
+GitHub check annotations (`::error` workflow commands), so build breaks stay
+diagnosable even when raw job logs are unavailable.
