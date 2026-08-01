@@ -33,6 +33,8 @@ inline GenerationRequest parseGenerationRequest(const nlohmann::json &json,
   req.cfg = json.value("cfg", 7.5f);
   req.scheduler_type = json.value("scheduler", "dpm");
   req.use_opencl = json.value("use_opencl", false);
+  req.num_threads = json.value("num_threads", 4);
+  req.n_gpu_layers = json.value("n_gpu_layers", 16);
   req.show_diffusion_process = json.value("show_diffusion_process", false);
   req.show_diffusion_stride = json.value("show_diffusion_stride", 1);
   req.seed = json.value(

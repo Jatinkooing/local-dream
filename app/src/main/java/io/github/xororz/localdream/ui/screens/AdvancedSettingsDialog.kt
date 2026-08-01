@@ -68,6 +68,10 @@ internal fun AdvancedSettingsDialog(
     denoiseStrength: Float,
     seed: String,
     returnedSeed: Long?,
+    numThreads: Int,
+    nGpuLayers: Int,
+    onNumThreadsChange: (Int) -> Unit,
+    onNGpuLayersChange: (Int) -> Unit,
     onAspectRatioSelected: (String) -> Unit,
     onCustomAspectRatioClick: () -> Unit,
     onResolutionSelected: (Resolution) -> Unit,
@@ -369,6 +373,71 @@ internal fun AdvancedSettingsDialog(
                         }
                     }
                 }
+                
+                // Smart Hardware Recommendation
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val actManager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                val memInfo = android.app.ActivityManager.MemoryInfo()
+                actManager.getMemoryInfo(memInfo)
+                val totalGb = memInfo.totalMem.toDouble() / (1024 * 1024 * 1024)
+                val recommendedThreads = 4
+                val recommendedLayers = if (totalGb <= 4.5) 0 else if (totalGb <= 6.5) 16 else 32
+                val recommendationText = if (totalGb <= 4.5) {
+                    "Device RAM: %.1f GB (Low RAM). We recommend CPU-only with 4 threads for absolute stability and to avoid system crashes.".format(totalGb)
+                } else {
+                    "Device RAM: %.1f GB. We recommend CPU Threads: 4, GPU Offload Layers: %d (Both mode) for blazing fast generation speed!".format(totalGb, recommendedLayers)
+                }
+
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        Text(
+                            "Hardware Recommendation",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            recommendationText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                }
+
+                // CPU Threads Picker
+                Column {
+                    Text(
+                        "CPU Threads: $numThreads",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Slider(
+                        value = numThreads.toFloat(),
+                        onValueChange = { onNumThreadsChange(it.roundToInt()) },
+                        valueRange = 1f..8f,
+                        steps = 6,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                // GPU Offload Layers Picker
+                Column {
+                    Text(
+                        "GPU Offload Layers: $nGpuLayers",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Slider(
+                        value = nGpuLayers.toFloat(),
+                        onValueChange = { onNGpuLayersChange(it.roundToInt()) },
+                        valueRange = 0f..32f,
+                        steps = 31,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
                 Column {
                     Text(
                         stringResource(R.string.batch_count, batchCounts),

@@ -25,6 +25,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.github.xororz.localdream.data.MigrationState
 import io.github.xororz.localdream.navigation.Screen
+import io.github.xororz.localdream.ui.screens.HomePortalScreen
 import io.github.xororz.localdream.ui.screens.HistoryScreen
 import io.github.xororz.localdream.ui.screens.MigrationScreen
 import io.github.xororz.localdream.ui.screens.ModelListScreen
@@ -164,7 +165,7 @@ private fun AppContent() {
     val navController = rememberNavController()
     NavHost(
         navController = navController,
-        startDestination = Screen.ModelList.route,
+        startDestination = Screen.HomePortal.route,
         enterTransition = { sharedAxisXEnter() },
         exitTransition = { sharedAxisXExit() },
         popEnterTransition = { sharedAxisXPopEnter() },
@@ -172,6 +173,9 @@ private fun AppContent() {
         predictivePopEnterTransition = { _ -> sharedAxisXPredictivePopEnter() },
         predictivePopExitTransition = { _ -> sharedAxisXPredictivePopExit() },
     ) {
+        composable(Screen.HomePortal.route) {
+            HomePortalScreen(navController)
+        }
         composable(Screen.ModelList.route) {
             ModelListScreen(navController)
         }

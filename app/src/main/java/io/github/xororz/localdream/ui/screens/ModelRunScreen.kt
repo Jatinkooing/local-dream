@@ -302,6 +302,8 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
     var seed by remember { mutableStateOf(GenerationDefaults.GLOBAL.seed) }
     var denoiseStrength by remember { mutableFloatStateOf(GenerationDefaults.GLOBAL.denoiseStrength) }
     var useOpenCL by remember { mutableStateOf(false) }
+    var numThreads by remember { mutableIntStateOf(4) }
+    var nGpuLayers by remember { mutableIntStateOf(16) }
     var batchCounts by remember { mutableIntStateOf(GenerationDefaults.GLOBAL.batchCounts) }
     var scheduler by remember { mutableStateOf(GenerationDefaults.GLOBAL.scheduler) }
     var aspectRatio by remember { mutableStateOf(GenerationDefaults.GLOBAL.aspectRatio) }
@@ -533,6 +535,8 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                 batchCounts = batchCounts,
                 scheduler = scheduler,
                 aspectRatio = aspectRatio,
+                numThreads = numThreads,
+                nGpuLayers = nGpuLayers,
             )
         }
     }
@@ -877,6 +881,9 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                     putExtra("effective_width", bmp.width)
                     putExtra("effective_height", bmp.height)
                     putExtra("denoise_strength", ultrafixDenoiseStrength)
+                    putExtra("use_opencl", useOpenCL)
+                    putExtra("num_threads", numThreads)
+                    putExtra("n_gpu_layers", nGpuLayers)
                     putExtra("scheduler", scheduler)
                     putExtra("ultrafix", true)
                     putExtra("ultrafix_tile_size", tileSize)
@@ -1135,6 +1142,8 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
             seed = prefs.seed
             denoiseStrength = prefs.denoiseStrength
             useOpenCL = prefs.useOpenCL
+            numThreads = prefs.numThreads
+            nGpuLayers = prefs.nGpuLayers
             batchCounts = prefs.batchCounts
             scheduler = if (isFirstRun) defaults.scheduler else prefs.scheduler
             // Without img2img the backend has no VAE encoder, so a stored
@@ -1489,6 +1498,8 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                         batchCounts = defaults.batchCounts,
                         scheduler = defaults.scheduler,
                         aspectRatio = defaults.aspectRatio,
+                        numThreads = 4,
+                        nGpuLayers = 16,
                     )
                 }
                 showResetConfirmDialog = false
@@ -1627,6 +1638,16 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                                     denoiseStrength = denoiseStrength,
                                     seed = seed,
                                     returnedSeed = returnedSeed,
+                                    numThreads = numThreads,
+                                    nGpuLayers = nGpuLayers,
+                                    onNumThreadsChange = {
+                                        numThreads = it
+                                        saveAllFields()
+                                    },
+                                    onNGpuLayersChange = {
+                                        nGpuLayers = it
+                                        saveAllFields()
+                                    },
                                     onAspectRatioSelected = { ratio ->
                                         if (!isRunning && aspectRatio != ratio) {
                                             aspectRatio = ratio
@@ -1831,6 +1852,8 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                                                 denoiseStrength,
                                             )
                                             putExtra("use_opencl", useOpenCL)
+                                            putExtra("num_threads", numThreads)
+                                            putExtra("n_gpu_layers", nGpuLayers)
                                             putExtra("scheduler", scheduler)
                                             putExtra("aspect_ratio", aspectRatio)
                                             putExtra("batch_index", i)

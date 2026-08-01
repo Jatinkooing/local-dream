@@ -49,6 +49,8 @@ struct GenerationRequest {
   unsigned seed = 0;
   std::string scheduler_type = "dpm";
   bool use_opencl = false;
+  int num_threads = 4;
+  int n_gpu_layers = 16;
   bool show_diffusion_process = false;
   int show_diffusion_stride = 1;
   int width = 512;
@@ -277,6 +279,8 @@ class Pipeline {
   const std::string model_dir_;
   const bool sdxl_;
   const bool use_v_pred_;
+  int num_threads_ = 4;
+  int n_gpu_layers_ = 16;
 
   MNN::Interpreter *safety_interpreter_ = nullptr;
   MNN::Session *safety_session_ = nullptr;
@@ -856,6 +860,8 @@ inline std::string Pipeline::renderPreview(const GenerationRequest &req,
 
 inline GenerationResult Pipeline::generate(
     GenerationRequest &req, const ProgressCallback &progress_callback) {
+  num_threads_ = req.num_threads;
+  n_gpu_layers_ = req.n_gpu_layers;
   if (req.prompt.empty()) throw std::invalid_argument("Prompt empty");
   if (safety_interpreter_ && !safety_session_)
     throw std::runtime_error("SafetyChecker missing");

@@ -25,6 +25,8 @@ class GenerationPreferences(private val context: Context) {
     private fun getDenoiseStrengthKey(modelId: String) = floatPreferencesKey("${modelId}_denoise_strength")
 
     private fun getUseOpenCLKey(modelId: String) = booleanPreferencesKey("${modelId}_use_opencl")
+    private fun getNumThreadsKey(modelId: String) = intPreferencesKey("${modelId}_num_threads")
+    private fun getNGpuLayersKey(modelId: String) = intPreferencesKey("${modelId}_n_gpu_layers")
 
     private fun getBatchCountsKey(modelId: String) = intPreferencesKey("${modelId}_batch_counts")
     private fun getSchedulerKey(modelId: String) = stringPreferencesKey("${modelId}_scheduler")
@@ -118,6 +120,8 @@ class GenerationPreferences(private val context: Context) {
         batchCounts: Int,
         scheduler: String,
         aspectRatio: String = "1:1",
+        numThreads: Int = 4,
+        nGpuLayers: Int = 16,
     ) {
         context.dataStore.edit { preferences ->
             preferences[getPromptKey(modelId)] = prompt
@@ -132,6 +136,8 @@ class GenerationPreferences(private val context: Context) {
             preferences[getBatchCountsKey(modelId)] = batchCounts
             preferences[getSchedulerKey(modelId)] = scheduler
             preferences[getAspectRatioKey(modelId)] = aspectRatio
+            preferences[getNumThreadsKey(modelId)] = numThreads
+            preferences[getNGpuLayersKey(modelId)] = nGpuLayers
         }
     }
 
@@ -166,6 +172,8 @@ class GenerationPreferences(private val context: Context) {
                 batchCounts = preferences[getBatchCountsKey(modelId)] ?: global.batchCounts,
                 scheduler = preferences[getSchedulerKey(modelId)] ?: global.scheduler,
                 aspectRatio = preferences[getAspectRatioKey(modelId)] ?: global.aspectRatio,
+                numThreads = preferences[getNumThreadsKey(modelId)] ?: 4,
+                nGpuLayers = preferences[getNGpuLayersKey(modelId)] ?: 16,
             )
         }
 
@@ -215,6 +223,8 @@ class GenerationPreferences(private val context: Context) {
             preferences.remove(getHeightKey(modelId))
             preferences.remove(getDenoiseStrengthKey(modelId))
             preferences.remove(getUseOpenCLKey(modelId))
+            preferences.remove(getNumThreadsKey(modelId))
+            preferences.remove(getNGpuLayersKey(modelId))
             preferences.remove(getBatchCountsKey(modelId))
             preferences.remove(getSchedulerKey(modelId))
             preferences.remove(getAspectRatioKey(modelId))
@@ -241,4 +251,6 @@ data class GenerationPrefs(
     val batchCounts: Int = GenerationDefaults.GLOBAL.batchCounts,
     val scheduler: String = GenerationDefaults.GLOBAL.scheduler,
     val aspectRatio: String = GenerationDefaults.GLOBAL.aspectRatio,
+    val numThreads: Int = 4,
+    val nGpuLayers: Int = 16,
 )

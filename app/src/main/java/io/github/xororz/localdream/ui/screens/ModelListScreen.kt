@@ -291,6 +291,7 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
     var tempScanBytes by remember { mutableLongStateOf(0L) }
     var showEmbeddingManagerDialog by remember { mutableStateOf(false) }
     var showCustomModelDialog by remember { mutableStateOf(false) }
+    var showCustomChatModelDialog by remember { mutableStateOf(false) }
     var showCustomNpuModelDialog by remember { mutableStateOf(false) }
     var isConverting by remember { mutableStateOf(false) }
     var conversionProgress by remember { mutableStateOf("") }
@@ -677,6 +678,69 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
         )
     }
 
+    if (showCustomChatModelDialog) {
+        CustomChatModelDialog(
+            context,
+            onDismiss = { showCustomChatModelDialog = false },
+            onModelAdded = { modelName, fileUri, qloraUri ->
+                showCustomChatModelDialog = false
+                scope.launch {
+                    isConverting = true
+                    conversionProgress = "Copying base chat model..."
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val modelsDir = Model.getModelsDir(context)
+                            val modelDir = File(modelsDir, modelName.replace(" ", ""))
+                            if (modelDir.exists()) modelDir.deleteRecursively()
+                            modelDir.mkdirs()
+
+                            // Copy base GGUF model
+                            val baseInputStream = context.contentResolver.openInputStream(fileUri)
+                                ?: throw Exception("Cannot open base model file")
+                            val baseModelFile = File(modelDir, "model.gguf")
+                            baseInputStream.use { input ->
+                                baseModelFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+
+                            // Copy QLoRA if provided
+                            if (qloraUri != null) {
+                                val qloraInputStream = context.contentResolver.openInputStream(qloraUri)
+                                    ?: throw Exception("Cannot open QLoRA file")
+                                val qloraFile = File(modelDir, "qlora.bin")
+                                qloraInputStream.use { input ->
+                                    qloraFile.outputStream().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                            }
+
+                            // Create config.json and finished tag
+                            File(modelDir, "config.json").writeText(
+                                """
+                                {
+                                    "default_prompt": "Hello!",
+                                    "default_scheduler": "dpm",
+                                    "default_steps": 20,
+                                    "default_cfg": 7.0
+                                }
+                                """.trimIndent()
+                            )
+                            File(modelDir, "finished").createNewFile()
+                        }
+                        isConverting = false
+                        modelRepository.refreshAllModels()
+                        snackbarHostState.showSnackbar("Custom Chat Model successfully imported!")
+                    } catch (e: Exception) {
+                        isConverting = false
+                        snackbarHostState.showSnackbar("Failed to import Chat Model: ${e.message}")
+                    }
+                }
+            }
+        )
+    }
+
     if (showCustomNpuModelDialog) {
         CustomNpuModelDialog(
             context,
@@ -851,7 +915,7 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                 title = {
                     Column {
                         Text(
-                            text = "Local Dream✨",
+                            text = "airound✨",
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -1035,6 +1099,17 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                 onClick = { showCustomModelDialog = true },
                                 modifier = Modifier.fillMaxWidth(),
                             )
+                        }
+                        item {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            FilledTonalButton(
+                                onClick = { showCustomChatModelDialog = true },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Default.Chat, contentDescription = "Add LLM")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Add Custom LLM Chat Model")
+                            }
                         }
                     }
 
@@ -2972,6 +3047,115 @@ fun CustomModelDialog(
                     }
                 },
                 enabled = modelName.isNotBlank() && selectedFileUri != null && !isIdReserved,
+            ) {
+                Text(stringResource(R.string.add_model))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun CustomChatModelDialog(
+    context: Context,
+    onDismiss: () -> Unit,
+    onModelAdded: (String, Uri, Uri?) -> Unit,
+) {
+    var modelName by remember { mutableStateOf("") }
+    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedQloraUri by remember { mutableStateOf<Uri?>(null) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri ->
+        uri?.let {
+            selectedFileUri = it
+            if (modelName.isBlank()) {
+                getFileNameFromUri(context, it)?.let { fileName ->
+                    modelName = fileName.substringBeforeLast(".")
+                }
+            }
+        }
+    }
+
+    val qloraPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri ->
+        uri?.let {
+            selectedQloraUri = it
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Custom LLM Chat Model") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    text = "Select a local GGUF format model and optionally a QLoRA adapter file to run custom general chat, coding, or unfiltered LLMs locally.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                OutlinedTextField(
+                    value = modelName,
+                    onValueChange = { modelName = it },
+                    label = { Text("Model Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+
+                Button(
+                    onClick = { filePickerLauncher.launch("application/octet-stream") },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(imageVector = Icons.Default.Folder, contentDescription = "Select GGUF")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (selectedFileUri == null) "Select Base GGUF Model File" else "Base Model Selected")
+                }
+
+                if (selectedFileUri != null) {
+                    Text(
+                        text = "File: ${getCleanFileName(selectedFileUri!!)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+
+                // QLoRA File Section
+                Button(
+                    onClick = { qloraPickerLauncher.launch("application/octet-stream") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.filledTonalButtonColors()
+                ) {
+                    Icon(imageVector = Icons.Default.Add, contentDescription = "Select QLoRA")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (selectedQloraUri == null) "Select QLoRA Adapter (Optional)" else "QLoRA Adapter Selected")
+                }
+
+                if (selectedQloraUri != null) {
+                    Text(
+                        text = "QLoRA: ${getCleanFileName(selectedQloraUri!!)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = modelName.isNotBlank() && selectedFileUri != null,
+                onClick = {
+                    onModelAdded(modelName, selectedFileUri!!, selectedQloraUri)
+                },
             ) {
                 Text(stringResource(R.string.add_model))
             }

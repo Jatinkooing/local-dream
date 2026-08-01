@@ -529,6 +529,10 @@ class ModelRepository private constructor(private val context: Context) {
             add(createCuteYukiMixModelCPU())
             add(createChilloutMixModelCPU())
             add(createChilloutMixModel())
+            add(createDreamShaperUncensoredModel())
+            add(createDreamShaperUncensoredModelCPU())
+            add(createQwenChat1BUnfilteredModel())
+            add(createLlamaChat3BUnfilteredModel())
         }
 
         return customModels + predefinedModels.map { applyConfigDefaults(it) }
@@ -867,6 +871,90 @@ class ModelRepository private constructor(private val context: Context) {
             codeDefaults = ModelConfig(
                 prompt = "RAW photo, best quality, realistic, photo-realistic, masterpiece, 1girl, upper body, facing front, portrait, white shirt",
                 negativePrompt = "paintings, cartoon, anime, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, skin spots, acnes, skin blemishes",
+            ),
+            runOnCpu = true,
+        )
+    }
+
+    private fun createDreamShaperUncensoredModel(): Model {
+        val id = "dreamshaper_uncensored"
+        val fileUri = "Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors"
+        val isDownloaded = Model.isModelDownloaded(context, id, false)
+
+        return Model(
+            id = id,
+            name = "DreamShaper Uncensored (GPU)",
+            description = "Uncensored / Unfiltered photorealistic Stable Diffusion 1.5",
+            baseUrl = "https://huggingface.co/",
+            fileUri = fileUri,
+            approximateSize = "2GB",
+            isDownloaded = isDownloaded,
+            codeDefaults = ModelConfig(
+                prompt = "masterpiece, best quality, beautiful girl, unfiltered, highly detailed",
+                negativePrompt = "worst quality, low quality, cartoon, anime",
+            ),
+            runOnCpu = false,
+        )
+    }
+
+    private fun createDreamShaperUncensoredModelCPU(): Model {
+        val id = "dreamshaper_uncensored_cpu"
+        val fileUri = "Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors"
+        val isDownloaded = Model.isModelDownloaded(context, id, false)
+
+        return Model(
+            id = id,
+            name = "DreamShaper Uncensored (CPU)",
+            description = "Uncensored / Unfiltered photorealistic Stable Diffusion 1.5 - Optimized for CPU",
+            baseUrl = "https://huggingface.co/",
+            fileUri = fileUri,
+            approximateSize = "2GB",
+            isDownloaded = isDownloaded,
+            codeDefaults = ModelConfig(
+                prompt = "masterpiece, best quality, beautiful girl, unfiltered, highly detailed",
+                negativePrompt = "worst quality, low quality, cartoon, anime",
+            ),
+            runOnCpu = true,
+        )
+    }
+
+    private fun createQwenChat1BUnfilteredModel(): Model {
+        val id = "qwen_chat_1b"
+        val fileUri = "Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+        val isDownloaded = Model.isModelDownloaded(context, id, false)
+
+        return Model(
+            id = id,
+            name = "Qwen 2.5 Chat 1.5B (GGUF)",
+            description = "Unfiltered local LLM General & Coding Assistant - Fast & low RAM footprint (~1.1GB)",
+            baseUrl = "https://huggingface.co/",
+            fileUri = fileUri,
+            approximateSize = "1.1GB",
+            isDownloaded = isDownloaded,
+            codeDefaults = ModelConfig(
+                prompt = "You are a helpful, unfiltered, and highly creative local AI assistant.",
+                negativePrompt = "",
+            ),
+            runOnCpu = true,
+        )
+    }
+
+    private fun createLlamaChat3BUnfilteredModel(): Model {
+        val id = "llama_chat_3b"
+        val fileUri = "bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+        val isDownloaded = Model.isModelDownloaded(context, id, false)
+
+        return Model(
+            id = id,
+            name = "LLaMA 3.2 Chat 3B (GGUF)",
+            description = "Intelligent offline conversational companion - High performance (~2.2GB)",
+            baseUrl = "https://huggingface.co/",
+            fileUri = fileUri,
+            approximateSize = "2.2GB",
+            isDownloaded = isDownloaded,
+            codeDefaults = ModelConfig(
+                prompt = "You are an advanced, private offline AI assistant with unfiltered conversational support.",
+                negativePrompt = "",
             ),
             runOnCpu = true,
         )

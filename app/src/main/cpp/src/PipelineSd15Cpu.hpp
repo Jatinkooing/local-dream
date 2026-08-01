@@ -42,6 +42,7 @@ class PipelineSd15Cpu : public Pipeline {
           "Failed to create temporary MNN CLIP interpreter!");
 
     MnnSessionOptions opts;  // CLIP always runs on CPU
+    opts.num_threads = num_threads_;
     MNN::Session *session = createMnnSession(interpreter, opts);
     if (!session) {
       delete interpreter;
@@ -240,6 +241,7 @@ class PipelineSd15Cpu : public Pipeline {
                                    const char *stage) const {
     MnnSessionOptions opts;
     opts.use_opencl = req.use_opencl;
+    opts.num_threads = req.num_threads;
     if (req.use_opencl) {
       auto cache_dir = ensureCacheDir(model_dir_);
       opts.cache_file = (cache_dir.empty() ? model_dir_ : cache_dir) + "/" +
