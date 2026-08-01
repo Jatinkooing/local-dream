@@ -40,23 +40,31 @@ fun HomePortalScreen(navController: NavController) {
     // Live C++ backend process state, shared app-wide by BackendService.
     val backendState by BackendService.backendState.collectAsState()
 
-    // Keep the native engine's runtime configuration in sync with the
-    // portal sliders: POST /v1/multimodal/config (debounced) whenever the
-    // sliders move while a server is listening.
-    LaunchedEffect(globalThreads, globalGpuLayers, backendState) {
-        if (backendState is BackendService.BackendState.Running) {
-            delay(400)
-            backendSynced = MultimodalBackend.pushRuntimeConfig(globalThreads, globalGpuLayers)
-        } else {
-            backendSynced = false
-        }
-    }
-
     // Read total RAM dynamically
     val actManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
     val memInfo = ActivityManager.MemoryInfo()
     actManager.getMemoryInfo(memInfo)
     val totalGb = memInfo.totalMem.toDouble() / (1024 * 1024 * 1024)
+
+    // Keep the native engine's runtime configuration in sync with the
+    // portal sliders: POST /v1/multimodal/config (debounced) whenever the
+    // sliders move while a server is listening.
+    LaunchedEffect(globalThreads, globalGpuLayers, backendState, totalGb) {
+        if (backendState is BackendService.BackendState.Running) {
+            delay(400)
+            // On low-RAM devices (<=4.5GB, e.g. 5GB phones) cap the engine's
+            // active budget at 1.25GB so loading a 1.1-2.2GB GGUF can never
+            // trigger a system-level OOM swap storm.
+            val memoryBudget = if (totalGb <= 4.5) 1_342_177_280L else null
+            backendSynced = MultimodalBackend.pushRuntimeConfig(
+                globalThreads,
+                globalGpuLayers,
+                memoryBudget,
+            )
+        } else {
+            backendSynced = false
+        }
+    }
 
     // Calculate smart hardware recommendation
     val recommendedThreads = 4

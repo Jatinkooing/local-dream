@@ -1159,7 +1159,18 @@ fun ModelListScreen(navController: NavController, modifier: Modifier = Modifier)
                                     if (!model.isDownloaded) {
                                         showDownloadConfirm = model
                                     } else {
-                                        navController.navigate(Screen.ModelRun.createRoute(model.id))
+                                        // Chat/voice GGUF models open their
+                                        // dedicated multimodal workspaces;
+                                        // only diffusion models use the
+                                        // image run screen.
+                                        when (model.modelKind) {
+                                            Model.KIND_CHAT ->
+                                                navController.navigate(Screen.Chat.createRoute(model.id))
+                                            Model.KIND_AUDIO ->
+                                                navController.navigate(Screen.Voice.route)
+                                            else ->
+                                                navController.navigate(Screen.ModelRun.createRoute(model.id))
+                                        }
                                     }
                                 }
                             },

@@ -136,7 +136,8 @@ import io.github.xororz.localdream.data.HistoryFilter
 import io.github.xororz.localdream.data.HistoryItem
 import io.github.xororz.localdream.data.HistoryManager
 import io.github.xororz.localdream.data.Model
-import io.github.xororz.localdream.data.MultimodalBackendRepository
+import io.github.xororz.localdream.data.ModelRepository
+import io.github.xororz.localdream.data.MultimodalBackend
 import io.github.xororz.localdream.data.PatchScanner
 import io.github.xororz.localdream.data.Resolution
 import io.github.xororz.localdream.data.TagAutocompleteRepository
