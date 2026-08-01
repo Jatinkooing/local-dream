@@ -14,10 +14,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import kotlinx.coroutines.delay
+import io.github.xororz.localdream.data.MultimodalBackend
+import io.github.xororz.localdream.service.BackendService
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -25,15 +27,16 @@ data class ChatMessage(
     val id: String,
     val isUser: Boolean,
     val content: String,
-    val isStreaming: Boolean = false
+    val isStreaming: Boolean = false,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     modelId: String,
-    navController: NavController
+    navController: NavController,
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -43,9 +46,9 @@ fun ChatScreen(
                 ChatMessage(
                     id = "1",
                     isUser = false,
-                    content = "Hello! I am your local AI assistant running offline via airound GGUF engine. How can I help you today?"
-                )
-            )
+                    content = "Hello! I am your local AI assistant running offline via airound GGUF engine. How can I help you today?",
+                ),
+            ),
         )
     }
     var inputText by remember { mutableStateOf("") }
@@ -54,7 +57,29 @@ fun ChatScreen(
 
     var cpuThreads by remember { mutableIntStateOf(4) }
     var gpuLayers by remember { mutableIntStateOf(16) }
-    var tps by remember { mutableStateOf("18.4 tokens/sec") }
+    var tps by remember { mutableStateOf("idle") }
+
+    // Live backend process state (Idle / Starting / Running / Error).
+    val backendState by BackendService.backendState.collectAsState()
+
+    // Boot the lightweight multimodal backend for this chat model as soon as
+    // the screen opens; it is a no-op when an identical config is already up.
+    LaunchedEffect(modelId) {
+        MultimodalBackend.ensureBackend(context, modelId)
+    }
+
+    // Push the slider configuration to the C++ engine whenever it changes
+    // (debounced) and the server is up.
+    LaunchedEffect(cpuThreads, gpuLayers, backendState) {
+        if (backendState is BackendService.BackendState.Running) {
+            kotlinx.coroutines.delay(400)
+            MultimodalBackend.pushRuntimeConfig(cpuThreads, gpuLayers)
+        }
+    }
+
+    fun updateMessage(id: String, transform: (ChatMessage) -> ChatMessage) {
+        messages = messages.map { if (it.id == id) transform(it) else it }
+    }
 
     Scaffold(
         topBar = {
@@ -64,12 +89,17 @@ fun ChatScreen(
                         Text(
                             text = if (modelId == "llama_chat_3b") "LLaMA 3.2 Chat (3B)" else "Qwen 2.5 Chat (1.5B)",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "GGUF Quantized • Offline • $tps",
+                            text = "GGUF • Offline • " + when (backendState) {
+                                is BackendService.BackendState.Running -> "engine live • $tps"
+                                is BackendService.BackendState.Starting -> "engine starting…"
+                                is BackendService.BackendState.Error -> "engine error"
+                                else -> "engine idle • $tps"
+                            },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
@@ -87,20 +117,20 @@ fun ChatScreen(
                             ChatMessage(
                                 id = System.currentTimeMillis().toString(),
                                 isUser = false,
-                                content = "Conversation cleared. Ready for your next question!"
-                            )
+                                content = "Conversation cleared. Ready for your next question!",
+                            ),
                         )
                     }) {
                         Icon(Icons.Default.Delete, contentDescription = "Clear Chat")
                     }
-                }
+                },
             )
-        }
+        },
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
         ) {
             // Optional Hardware controls panel
             if (showSettings) {
@@ -108,27 +138,32 @@ fun ChatScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             "GGUF Runtime Hardware Settings",
                             style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
                         Text("CPU Threads: $cpuThreads", style = MaterialTheme.typography.bodySmall)
                         Slider(
                             value = cpuThreads.toFloat(),
                             onValueChange = { cpuThreads = it.roundToInt() },
                             valueRange = 1f..8f,
-                            steps = 6
+                            steps = 6,
                         )
                         Text("GPU Offload Layers: $gpuLayers", style = MaterialTheme.typography.bodySmall)
                         Slider(
                             value = gpuLayers.toFloat(),
                             onValueChange = { gpuLayers = it.roundToInt() },
                             valueRange = 0f..32f,
-                            steps = 31
+                            steps = 31,
+                        )
+                        Text(
+                            text = "Applied live to the C++ engine via /v1/multimodal/config",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -141,30 +176,35 @@ fun ChatScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 state = listState,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(messages) { message ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
+                        horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start,
                     ) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = if (message.isUser)
+                            color = if (message.isUser) {
                                 MaterialTheme.colorScheme.primaryContainer
-                            else
-                                MaterialTheme.colorScheme.secondaryContainer,
-                            modifier = Modifier.widthIn(max = 280.dp)
+                            } else {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            },
+                            modifier = Modifier.widthIn(max = 280.dp),
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
                                     text = message.content,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = if (message.isUser)
+                                    color = if (message.isUser) {
                                         MaterialTheme.colorScheme.onPrimaryContainer
-                                    else
+                                    } else {
                                         MaterialTheme.colorScheme.onSecondaryContainer
+                                    },
                                 )
+                                if (message.isStreaming && message.content.isEmpty()) {
+                                    LinearProgressIndicator(modifier = Modifier.padding(top = 8.dp))
+                                }
                             }
                         }
                     }
@@ -175,13 +215,13 @@ fun ChatScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shadowElevation = 8.dp,
-                color = MaterialTheme.colorScheme.surface
+                color = MaterialTheme.colorScheme.surface,
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     OutlinedTextField(
                         value = inputText,
@@ -189,7 +229,7 @@ fun ChatScreen(
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("Ask local assistant...") },
                         maxLines = 4,
-                        enabled = !isGenerating
+                        enabled = !isGenerating,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     FloatingActionButton(
@@ -204,42 +244,61 @@ fun ChatScreen(
                                 messages = messages + ChatMessage(userMessageId, true, userMsg) +
                                     ChatMessage(aiMessageId, false, "", true)
 
+                                // Conversation history sent to the engine
+                                // (without the placeholder streaming bubble).
+                                val history = messages
+                                    .filter { it.id != aiMessageId && it.content.isNotBlank() }
+                                    .takeLast(12)
+                                    .map { (if (it.isUser) "user" else "assistant") to it.content }
+
                                 scope.launch {
                                     listState.animateScrollToItem(messages.size - 1)
-                                    val responseTokens = listOf(
-                                        "Running ", "offline ", "via ", "airound ", "GGUF ",
-                                        "multimodal ", "backend ", "with ", "$cpuThreads ", "CPU ",
-                                        "threads ", "and ", "$gpuLayers ", "GPU ", "layers. ",
-                                        "Your ", "query ", "\"$userMsg\" ", "was ", "processed ",
-                                        "locally ", "with ", "zero ", "cloud ", "latency!"
-                                    )
+                                    val startedAt = System.currentTimeMillis()
+                                    var tokenCount = 0
+                                    try {
+                                        // Make sure the C++ server is up and
+                                        // running with the slider config
+                                        // before streaming.
+                                        if (!MultimodalBackend.awaitHealthy(2_000)) {
+                                            MultimodalBackend.ensureBackend(context, modelId)
+                                            MultimodalBackend.awaitHealthy(15_000)
+                                        }
+                                        MultimodalBackend.pushRuntimeConfig(cpuThreads, gpuLayers)
 
-                                    var responseAccumulated = ""
-                                    for (token in responseTokens) {
-                                        delay(45)
-                                        responseAccumulated += token
-                                        messages = messages.map {
-                                            if (it.id == aiMessageId) {
-                                                it.copy(content = responseAccumulated)
-                                            } else {
-                                                it
+                                        val fullText = MultimodalBackend.streamChatCompletion(
+                                            model = modelId,
+                                            messages = history,
+                                            numThreads = cpuThreads,
+                                            nGpuLayers = gpuLayers,
+                                        ) { token ->
+                                            tokenCount += 1
+                                            updateMessage(aiMessageId) { it.copy(content = it.content + token) }
+                                            val elapsed = System.currentTimeMillis() - startedAt
+                                            if (elapsed > 500) {
+                                                tps = "%.1f tokens/sec".format(tokenCount * 1000.0 / elapsed)
                                             }
                                         }
+                                        if (fullText.isEmpty()) {
+                                            updateMessage(aiMessageId) {
+                                                it.copy(content = "(the engine returned an empty response)")
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        updateMessage(aiMessageId) {
+                                            it.copy(
+                                                content = "⚠️ Live inference failed: ${e.message ?: "unknown error"}\n\n" +
+                                                    "Make sure the GGUF model is downloaded from the model list.",
+                                            )
+                                        }
+                                    } finally {
+                                        updateMessage(aiMessageId) { it.copy(isStreaming = false) }
+                                        isGenerating = false
                                         listState.animateScrollToItem(messages.size - 1)
                                     }
-
-                                    messages = messages.map {
-                                        if (it.id == aiMessageId) {
-                                            it.copy(isStreaming = false)
-                                        } else {
-                                            it
-                                        }
-                                    }
-                                    isGenerating = false
                                 }
                             }
                         },
-                        containerColor = MaterialTheme.colorScheme.primary
+                        containerColor = MaterialTheme.colorScheme.primary,
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
                     }

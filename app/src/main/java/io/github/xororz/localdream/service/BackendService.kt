@@ -57,6 +57,7 @@ class BackendService : Service() {
     companion object {
         private const val TAG = "BackendService"
         private const val EXECUTABLE_NAME = "libstable_diffusion_core.so"
+        private const val MULTIMODAL_BACKEND_TYPE = "multimodal"
         private const val RUNTIME_DIR = "runtime_libs"
         private const val NOTIFICATION_ID = 2
         private const val CHANNEL_ID = "backend_service_channel"
@@ -382,19 +383,34 @@ class BackendService : Service() {
             val useImg2img = preferences.getBoolean("use_img2img", true)
             val listenOnAll = preferences.getBoolean("listen_on_all_addresses", false)
 
-            val command = mutableListOf(
-                executableFile.absolutePath,
-                "--type",
-                backendType,
-                "--model_dir",
-                modelsDir.absolutePath,
-                "--port",
-                "8081",
-            )
-            if (backendType != "sd15cpu") {
+            val isMultimodal = backendType == MULTIMODAL_BACKEND_TYPE
+            val command = if (isMultimodal) {
+                // Lightweight GGUF chat/voice server: skips the whole diffusion
+                // pipeline (tokenizer/CLIP/UNet/VAE + QNN) so it starts in well
+                // under a second even on low-RAM devices.
+                mutableListOf(
+                    executableFile.absolutePath,
+                    "--multimodal_mode",
+                    "--model_dir",
+                    modelsDir.absolutePath,
+                    "--port",
+                    "8081",
+                )
+            } else {
+                mutableListOf(
+                    executableFile.absolutePath,
+                    "--type",
+                    backendType,
+                    "--model_dir",
+                    modelsDir.absolutePath,
+                    "--port",
+                    "8081",
+                )
+            }
+            if (!isMultimodal && backendType != "sd15cpu") {
                 command += listOf("--lib_dir", runtimeDir.absolutePath)
             }
-            if (!useImg2img) {
+            if (!isMultimodal && !useImg2img) {
                 command += "--no_img2img"
             }
             if (backendType == "sd15npu" && (width != 512 || height != 512)) {
@@ -419,10 +435,10 @@ class BackendService : Service() {
                     )
                 }
             }
-            if (File(modelsDir, "V_PRED").exists()) {
+            if (!isMultimodal && File(modelsDir, "V_PRED").exists()) {
                 command += "--use_v_pred"
             }
-            if (BuildConfig.FLAVOR == "filter") {
+            if (!isMultimodal && BuildConfig.FLAVOR == "filter") {
                 command += listOf(
                     "--safety_checker",
                     File(filesDir, "safety_checker.mnn").absolutePath,

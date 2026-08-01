@@ -124,6 +124,10 @@ data class Model(
     val isCustom: Boolean = false,
     val isSdxl: Boolean = false,
     val isAnima: Boolean = false,
+    // KIND_DIFFUSION (image), KIND_CHAT (LLM GGUF) or KIND_AUDIO (whisper
+    // GGUF). Chat/audio models run on the lightweight multimodal backend and
+    // ship as plain single-file downloads instead of zip packages.
+    val modelKind: String = KIND_DIFFUSION,
 
 ) {
     // Per-field priority: code defaults > config.json > global defaults.
@@ -138,8 +142,11 @@ data class Model(
         get() = isSdxl || isAnima
 
     // Backend --type value; each type implies the full model file layout.
+    // Chat/audio GGUF models run on the lightweight multimodal server, which
+    // skips diffusion init entirely.
     val backendType: String
         get() = when {
+            modelKind != KIND_DIFFUSION -> "multimodal"
             isAnima -> "anima"
             isSdxl -> "sdxl"
             runOnCpu -> "sd15cpu"
@@ -156,7 +163,12 @@ data class Model(
             putExtra(ModelDownloadService.EXTRA_FILE_URL, "${baseUrl.removeSuffix("/")}/$fileUri")
             putExtra(ModelDownloadService.EXTRA_IS_ZIP, fileUri.endsWith(".zip"))
             putExtra(ModelDownloadService.EXTRA_IS_NPU, !runOnCpu)
-            putExtra(ModelDownloadService.EXTRA_MODEL_TYPE, "sd")
+            // Single .gguf files land directly in the model directory; "sd"
+            // zip packages get extracted there instead.
+            putExtra(
+                ModelDownloadService.EXTRA_MODEL_TYPE,
+                if (modelKind == KIND_DIFFUSION) "sd" else "gguf",
+            )
         }
 
         context.startForegroundService(intent)
@@ -231,6 +243,11 @@ data class Model(
 
     companion object {
         private const val MODELS_DIR = "models"
+
+        // modelKind values
+        const val KIND_DIFFUSION = "diffusion"
+        const val KIND_CHAT = "chat"
+        const val KIND_AUDIO = "audio"
 
         fun isDeviceSupported(): Boolean {
             val soc = getDeviceSoc()
@@ -463,12 +480,20 @@ class ModelRepository private constructor(private val context: Context) {
                 val sdxlFile = File(dir, "SDXL")
                 val animaFile = File(dir, "ANIMA")
 
+                val hasGguf = dir.listFiles()?.any { it.extension.lowercase() == "gguf" } == true
+
                 when {
                     animaFile.exists() ->
                         customModels.add(createCustomModel(dir, isNpu = true, isAnima = true))
 
                     sdxlFile.exists() ->
                         customModels.add(createCustomModel(dir, isNpu = true, isSdxl = true))
+
+                    // A dir holding a .gguf weight file is a chat/voice model
+                    // (imported via "Add Custom LLM Chat Model"), not a
+                    // diffusion zip: it needs the multimodal backend.
+                    hasGguf ->
+                        customModels.add(createCustomChatModel(dir))
 
                     finishedFile.exists() ->
                         customModels.add(createCustomModel(dir, isNpu = false))
@@ -533,6 +558,7 @@ class ModelRepository private constructor(private val context: Context) {
             add(createDreamShaperUncensoredModelCPU())
             add(createQwenChat1BUnfilteredModel())
             add(createLlamaChat3BUnfilteredModel())
+            add(createWhisperTinyQ4Model())
         }
 
         return customModels + predefinedModels.map { applyConfigDefaults(it) }
@@ -936,6 +962,7 @@ class ModelRepository private constructor(private val context: Context) {
                 negativePrompt = "",
             ),
             runOnCpu = true,
+            modelKind = Model.KIND_CHAT,
         )
     }
 
@@ -957,6 +984,49 @@ class ModelRepository private constructor(private val context: Context) {
                 negativePrompt = "",
             ),
             runOnCpu = true,
+            modelKind = Model.KIND_CHAT,
+        )
+    }
+
+    private fun createWhisperTinyQ4Model(): Model {
+        val id = "whisper_tiny_q4_0"
+        val fileUri = "ggerganov/whisper.cpp/resolve/main/ggml-tiny-q4_0.bin"
+        val isDownloaded = Model.isModelDownloaded(context, id, false)
+
+        return Model(
+            id = id,
+            name = "Whisper Tiny q4_0 (GGUF)",
+            description = "Offline speech-to-text engine for the Voice Studio - tiny footprint (~39MB)",
+            baseUrl = "https://huggingface.co/",
+            fileUri = fileUri,
+            approximateSize = "39MB",
+            isDownloaded = isDownloaded,
+            runOnCpu = true,
+            modelKind = Model.KIND_AUDIO,
+        )
+    }
+
+    private fun createCustomChatModel(modelDir: File): Model {
+        val modelId = modelDir.name
+        val ggufBytes = modelDir.listFiles()
+            ?.filter { it.extension.lowercase() == "gguf" }
+            ?.sumOf { it.length() } ?: 0L
+        val sizeLabel = if (ggufBytes > 0) {
+            "%.1fGB".format(ggufBytes.toDouble() / (1024L * 1024L * 1024L))
+        } else {
+            "GGUF"
+        }
+
+        return Model(
+            id = modelId,
+            name = modelId,
+            description = "Custom LLM Chat (GGUF)",
+            baseUrl = "",
+            approximateSize = sizeLabel,
+            isDownloaded = true,
+            runOnCpu = true,
+            isCustom = true,
+            modelKind = Model.KIND_CHAT,
         )
     }
 

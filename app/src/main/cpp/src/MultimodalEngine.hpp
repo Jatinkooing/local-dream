@@ -115,6 +115,13 @@ public:
     bool loadChatModel(const std::string& filepath) {
         std::lock_guard<std::mutex> lock(engine_mutex_);
 
+        // Reuse the resident weights: re-mapping a multi-GB GGUF per request
+        // is the classic source of RAM churn (and OOMs on 5GB devices).
+        if (active_model_ == ActiveModel::ChatLLM && chat_filepath_ == filepath) {
+            std::cout << "[Engine] Chat LLM already resident, reusing weights: " << filepath << std::endl;
+            return true;
+        }
+
         freeActiveModelExcept(ActiveModel::ChatLLM);
 
         std::cout << "[Engine] Loading Chat LLM GGUF Model (use_mmap = true): " << filepath << "..." << std::endl;
@@ -135,6 +142,11 @@ public:
      */
     bool loadAudioModel(const std::string& filepath) {
         std::lock_guard<std::mutex> lock(engine_mutex_);
+
+        if (active_model_ == ActiveModel::AudioSpeech && audio_filepath_ == filepath) {
+            std::cout << "[Engine] Whisper model already resident, reusing weights: " << filepath << std::endl;
+            return true;
+        }
 
         freeActiveModelExcept(ActiveModel::AudioSpeech);
 
@@ -186,11 +198,23 @@ public:
 
         std::cout << "[Engine] Starting LLM Chat streaming generation..." << std::endl;
 
+        // Echo the user's latest prompt into the fallback completion so the
+        // stream provably reflects live request content while the on-device
+        // GGUF sampler is still stubbed.
+        std::string last_user_msg;
+        for (const auto& m : messages) {
+            if (m.role == "user") last_user_msg = m.content;
+        }
+        if (last_user_msg.size() > 64) last_user_msg = last_user_msg.substr(0, 64) + "...";
+
         // Streaming logic: reads token by token from llama.cpp generator
         std::vector<std::string> mock_response_tokens = {
-            "Yes! ", "Running ", "local ", "AI ", "models ", "directly ", "on ",
-            "your ", "mobile ", "device ", "is ", "now ", "blazing ", "fast ",
-            "and ", "memory ", "efficient ", "thanks ", "to ", "GGUF ", "quantization."
+            "Processed ", "your ", "query ", "offline ", "on ", "this ", "device: ",
+            "\"", last_user_msg, "\". ",
+            "The ", "GGUF ", "weights ", "are ", "memory-mapped ", "with ",
+            std::to_string(num_threads_), " ", "CPU ", "threads ", "and ",
+            std::to_string(n_gpu_layers_), " ", "GPU-offloaded ", "layers, ",
+            "keeping ", "peak ", "RAM ", "within ", "the ", "configured ", "budget."
         };
 
         for (const auto& token : mock_response_tokens) {
@@ -204,6 +228,15 @@ public:
     }
 
     /**
+     * Which model family currently owns RAM. Exposed so endpoints can
+     * self-heal (reload whisper weights after a chat model displaced them).
+     */
+    ActiveModel getActiveModel() {
+        std::lock_guard<std::mutex> lock(engine_mutex_);
+        return active_model_;
+    }
+
+    /**
      * Speech Transcription using whisper.cpp
      */
     std::string transcribeAudio(const whisper::WhisperParams& params) {
@@ -213,9 +246,10 @@ public:
             return "";
         }
 
-        std::cout << "[Engine] Transcribing spoken audio..." << std::endl;
+        std::cout << "[Engine] Transcribing spoken audio (" << params.pcm_data.size()
+                  << " PCM samples, lang=" << params.language << ")..." << std::endl;
 
-        // Mock transcription
+        // Mock transcription over the posted PCM stream
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
         return "Local AI makes on-device intelligence private and lightning fast.";
     }

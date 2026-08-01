@@ -135,7 +135,8 @@ import io.github.xororz.localdream.data.GenerationPreferences
 import io.github.xororz.localdream.data.HistoryFilter
 import io.github.xororz.localdream.data.HistoryItem
 import io.github.xororz.localdream.data.HistoryManager
-import io.github.xororz.localdream.data.ModelRepository
+import io.github.xororz.localdream.data.Model
+import io.github.xororz.localdream.data.MultimodalBackendRepository
 import io.github.xororz.localdream.data.PatchScanner
 import io.github.xororz.localdream.data.Resolution
 import io.github.xororz.localdream.data.TagAutocompleteRepository
@@ -1643,10 +1644,19 @@ fun ModelRunScreen(modelId: String, navController: NavController, modifier: Modi
                                     onNumThreadsChange = {
                                         numThreads = it
                                         saveAllFields()
+                                        // Mirror the value into the C++ engine
+                                        // (POST /v1/multimodal/config); no-op
+                                        // when the server is not listening.
+                                        scope.launch {
+                                            MultimodalBackend.pushRuntimeConfig(numThreads, nGpuLayers)
+                                        }
                                     },
                                     onNGpuLayersChange = {
                                         nGpuLayers = it
                                         saveAllFields()
+                                        scope.launch {
+                                            MultimodalBackend.pushRuntimeConfig(numThreads, nGpuLayers)
+                                        }
                                     },
                                     onAspectRatioSelected = { ratio ->
                                         if (!isRunning && aspectRatio != ratio) {

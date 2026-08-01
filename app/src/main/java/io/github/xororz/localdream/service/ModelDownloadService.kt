@@ -59,7 +59,7 @@ class ModelDownloadService : Service() {
         const val EXTRA_FILE_URL = "file_url"
         const val EXTRA_IS_ZIP = "is_zip"
         const val EXTRA_IS_NPU = "is_npu"
-        const val EXTRA_MODEL_TYPE = "model_type" // "sd" or "upscaler"
+        const val EXTRA_MODEL_TYPE = "model_type" // "sd", "upscaler" or "gguf"
     }
 
     sealed class DownloadState {
@@ -170,6 +170,26 @@ class ModelDownloadService : Service() {
 
                         // Don't report success on a failed move: it would leave
                         // an empty model dir that the UI/loader can't use.
+                        if (!tempFile.renameTo(targetFile)) {
+                            tempFile.copyTo(targetFile, overwrite = true)
+                        }
+                    }
+
+                    "gguf" -> {
+                        // Single-file GGUF weights (LLM chat / whisper): place
+                        // them into the model directory under their original
+                        // name where the C++ multimodal resolver picks them up.
+                        val modelDir = File(getModelsDir(), modelId)
+                        if (modelDir.exists()) {
+                            modelDir.deleteRecursively()
+                        }
+                        modelDir.mkdirs()
+
+                        val fileName = fileUrl
+                            .substringAfterLast('/')
+                            .substringBefore('?')
+                            .ifBlank { "model.gguf" }
+                        val targetFile = File(modelDir, fileName)
                         if (!tempFile.renameTo(targetFile)) {
                             tempFile.copyTo(targetFile, overwrite = true)
                         }

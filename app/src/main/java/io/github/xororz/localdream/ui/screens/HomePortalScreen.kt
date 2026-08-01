@@ -19,7 +19,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import io.github.xororz.localdream.data.MultimodalBackend
 import io.github.xororz.localdream.navigation.Screen
+import io.github.xororz.localdream.service.BackendService
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,6 +35,22 @@ fun HomePortalScreen(navController: NavController) {
     var globalThreads by remember { mutableIntStateOf(4) }
     var globalGpuLayers by remember { mutableIntStateOf(16) }
     var activeCategory by remember { mutableStateOf("All") }
+    var backendSynced by remember { mutableStateOf(false) }
+
+    // Live C++ backend process state, shared app-wide by BackendService.
+    val backendState by BackendService.backendState.collectAsState()
+
+    // Keep the native engine's runtime configuration in sync with the
+    // portal sliders: POST /v1/multimodal/config (debounced) whenever the
+    // sliders move while a server is listening.
+    LaunchedEffect(globalThreads, globalGpuLayers, backendState) {
+        if (backendState is BackendService.BackendState.Running) {
+            delay(400)
+            backendSynced = MultimodalBackend.pushRuntimeConfig(globalThreads, globalGpuLayers)
+        } else {
+            backendSynced = false
+        }
+    }
 
     // Read total RAM dynamically
     val actManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -141,6 +160,35 @@ fun HomePortalScreen(navController: NavController) {
                             valueRange = 0f..32f,
                             steps = 31,
                             modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    // Live sync status with the C++ engine
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(
+                                    when {
+                                        backendSynced -> MaterialTheme.colorScheme.primary
+                                        backendState is BackendService.BackendState.Starting ->
+                                            MaterialTheme.colorScheme.tertiary
+                                        else -> MaterialTheme.colorScheme.outline
+                                    },
+                                    RoundedCornerShape(5.dp)
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = when {
+                                backendSynced -> "C++ engine live — sliders synced via /v1/multimodal/config"
+                                backendState is BackendService.BackendState.Running -> "Engine live — syncing…"
+                                backendState is BackendService.BackendState.Starting -> "Engine starting…"
+                                backendState is BackendService.BackendState.Error -> "Engine error — open a workspace to retry"
+                                else -> "Engine idle — settings apply on next launch"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
