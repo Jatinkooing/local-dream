@@ -107,7 +107,7 @@ android {
     }
 }
 
-val isLinuxHost = System.getProperty("os.name").lowercase(java.util.Locale.getDefault()).contains("linux")
+val isLinuxHost = System.getProperty("os.name").lowercase().contains("linux")
 
 tasks.register<Exec>("buildNativeBackend") {
     onlyIf {
