@@ -6,9 +6,49 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "[build_cpu.sh] PWD: $(pwd)"
-echo "[build_cpu.sh] Env: ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-unset} ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-unset} ANDROID_HOME=${ANDROID_HOME:-unset} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset} HOME=${HOME}"
+echo "[build_cpu.sh] Env: ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-unset} ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-unset} ANDROID_HOME=${ANDROID_HOME:-unset} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset} HOME=${HOME} GITHUB_WORKSPACE=${GITHUB_WORKSPACE:-unset}"
 ls -la || true
 ls -la 3rdparty/ || true
+
+# --- Ensure Rust toolchain for tokenizers-cpp (xororz/tokenizers-cpp wraps HF tokenizers Rust) ---
+echo "[build_cpu.sh] Checking Rust toolchain..."
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "[build_cpu.sh] cargo not found, installing rustup..."
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal || true
+  export PATH="$HOME/.cargo/bin:$PATH"
+  echo "[build_cpu.sh] After install, cargo: $(which cargo || echo notfound) version: $(cargo --version 2>&1 || echo fail)"
+else
+  echo "[build_cpu.sh] cargo found: $(cargo --version)"
+  echo "[build_cpu.sh] rustc: $(rustc --version 2>&1 || echo fail)"
+fi
+
+export PATH="$HOME/.cargo/bin:$PATH"
+if [ -f "$HOME/.cargo/env" ]; then
+  # shellcheck disable=SC1090
+  source "$HOME/.cargo/env" || true
+fi
+
+if command -v rustup >/dev/null 2>&1; then
+  echo "[build_cpu.sh] rustup found, updating stable..."
+  rustup update stable 2>&1 | tail -n 20 || true
+  rustup default stable 2>&1 | tail -n 20 || true
+  cargo --version
+  rustc --version
+fi
+
+# If cargo still not found, try common locations
+if ! command -v cargo >/dev/null 2>&1; then
+  for cargo_path in "$HOME/.cargo/bin/cargo" "/root/.cargo/bin/cargo" "/usr/local/cargo/bin/cargo"; do
+    if [ -x "$cargo_path" ]; then
+      export PATH="$(dirname "$cargo_path"):$PATH"
+      echo "[build_cpu.sh] Found cargo at $cargo_path, added to PATH"
+      break
+    fi
+  done
+fi
+
+echo "[build_cpu.sh] Final cargo check: $(which cargo || echo notfound) $(cargo --version 2>&1 || echo nocargo)"
+# -------------------------------------------------------------------------------
 
 find_ndk() {
   if [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ] && [ -f "$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake" ]; then
@@ -92,9 +132,14 @@ if [ $CONF_STATUS -ne 0 ]; then
   echo "::error title=CMake configure failed::Configure failed with $CONF_STATUS"
   cat build/cpu/CMakeFiles/CMakeOutput.log 2>&1 | tail -n 200 || true
   cat build/cpu/CMakeFiles/CMakeError.log 2>&1 | tail -n 800 || true
-  # Emit annotation with error log
   ERR=$(tail -n 300 build/cpu/CMakeFiles/CMakeError.log 2>/dev/null | tr '%' '%25' | tr '\r' ' ' | tr '\n' '%0A' | cut -c1-4000)
   echo "::error title=CMakeError.log tail::$ERR"
+  if [ -n "$GITHUB_WORKSPACE" ]; then
+    mkdir -p "$GITHUB_WORKSPACE/dist" || true
+    cp build/cpu/configure.log "$GITHUB_WORKSPACE/dist/" 2>/dev/null || true
+    cp build/cpu/CMakeFiles/CMakeError.log "$GITHUB_WORKSPACE/dist/" 2>/dev/null || true
+    cp build/cpu/CMakeFiles/CMakeOutput.log "$GITHUB_WORKSPACE/dist/" 2>/dev/null || true
+  fi
   exit 2
 fi
 set -e
@@ -106,17 +151,20 @@ BUILD_STATUS=${PIPESTATUS[0]}
 echo "[build_cpu.sh] Build finished with status $BUILD_STATUS"
 tail -n 400 build/cpu/build.log
 if [ $BUILD_STATUS -ne 0 ]; then
-  echo "[build_cpu.sh] Build failed, last 500 lines:" >&2
-  tail -n 500 build/cpu/build.log >&2 || true
+  echo "[build_cpu.sh] Build failed, last 800 lines:" >&2
+  tail -n 800 build/cpu/build.log >&2 || true
   echo "[build_cpu.sh] Searching for 'error:' in build log:" >&2
-  grep -i "error:" build/cpu/build.log | tail -n 200 >&2 || true
-  # Emit annotation with build log tail
-  TAIL=$(tail -n 500 build/cpu/build.log | tr '%' '%25' | tr '\r' ' ' | tr '\n' '%0A' | cut -c1-8000)
-  echo "::error title=Native build failed (tail 500)::$TAIL"
-  # Also try to find specific error lines
-  GREP_ERR=$(grep -i "error:" build/cpu/build.log | tail -n 100 | tr '%' '%25' | tr '\r' ' ' | tr '\n' '%0A' | cut -c1-8000)
+  grep -i "error:" build/cpu/build.log | tail -n 300 >&2 || true
+  TAIL=$(tail -n 800 build/cpu/build.log | tr '%' '%25' | tr '\r' ' ' | tr '\n' '%0A' | cut -c1-8000)
+  echo "::error title=Native build failed (tail 800)::$TAIL"
+  GREP_ERR=$(grep -i "error:" build/cpu/build.log | tail -n 150 | tr '%' '%25' | tr '\r' ' ' | tr '\n' '%0A' | cut -c1-8000)
   if [ -n "$GREP_ERR" ]; then
     echo "::error title=Native build errors::$GREP_ERR"
+  fi
+  if [ -n "$GITHUB_WORKSPACE" ]; then
+    mkdir -p "$GITHUB_WORKSPACE/dist" || true
+    cp build/cpu/build.log "$GITHUB_WORKSPACE/dist/" 2>/dev/null || true
+    cp build/cpu/configure.log "$GITHUB_WORKSPACE/dist/" 2>/dev/null || true
   fi
   exit 2
 fi
