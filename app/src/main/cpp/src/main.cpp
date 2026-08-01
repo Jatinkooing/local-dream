@@ -32,6 +32,8 @@
 #include "httplib.h"
 #include "json.hpp"
 
+#include "MultimodalEngine.hpp"
+
 // The server runs exactly one of three fixed model formats, selected by
 // --type. Each format implies the full file layout under --model_dir, the
 // diffusion backend (MNN vs QNN), and the CLIP pipeline; nothing else is
@@ -681,6 +683,120 @@ static void registerTokenizeEndpoint(httplib::Server &svr,
   });
 }
 
+static void registerChatCompletionsEndpoint(httplib::Server &svr) {
+  svr.Post("/v1/chat/completions", [](const httplib::Request &req,
+                                      httplib::Response &res) {
+    try {
+      auto json = nlohmann::json::parse(req.body);
+      bool stream = json.value("stream", true);
+      std::string model = json.value("model", "default-chat-model");
+
+      std::vector<llama::ChatMessage> messages;
+      if (json.contains("messages") && json["messages"].is_array()) {
+        for (const auto &m : json["messages"]) {
+          llama::ChatMessage msg;
+          msg.role = m.value("role", "user");
+          msg.content = m.value("content", "");
+          messages.push_back(msg);
+        }
+      }
+
+      int num_threads = json.value("num_threads", 4);
+      int n_gpu_layers = json.value("n_gpu_layers", 16);
+      MultimodalEngine::getInstance().setThreadsAndLayers(num_threads, n_gpu_layers);
+      MultimodalEngine::getInstance().loadChatModel(model);
+
+      if (stream) {
+        res.set_header("Content-Type", "text/event-stream");
+        res.set_header("Cache-Control", "no-cache");
+        res.set_header("Connection", "keep-alive");
+        res.set_chunked_content_provider(
+            "text/event-stream",
+            [messages](intptr_t, httplib::DataSink &sink) -> bool {
+              try {
+                MultimodalEngine::getInstance().streamChatCompletion(
+                    messages,
+                    [&sink](const std::string &token) {
+                      nlohmann::json delta_json;
+                      delta_json["id"] = "chatcmpl-local";
+                      delta_json["object"] = "chat.completion.chunk";
+                      delta_json["choices"] = {
+                          {{"delta", {{"content", token}}},
+                           {"finish_reason", nullptr}}};
+                      std::string event_str = "data: " + delta_json.dump() + "\n\n";
+                      sink.write(event_str.data(), event_str.size());
+                    });
+                std::string done_str = "data: [DONE]\n\n";
+                sink.write(done_str.data(), done_str.size());
+                sink.done();
+              } catch (const std::exception &e) {
+                std::cerr << "Chat stream error: " << e.what() << std::endl;
+                sink.done();
+              }
+              return false;
+            });
+      } else {
+        std::string full_response;
+        MultimodalEngine::getInstance().streamChatCompletion(
+            messages,
+            [&full_response](const std::string &token) {
+              full_response += token;
+            });
+        nlohmann::json response_json;
+        response_json["id"] = "chatcmpl-local";
+        response_json["object"] = "chat.completion";
+        response_json["choices"] = {
+            {{"message", {{"role", "assistant"}, {"content", full_response}}},
+             {"finish_reason", "stop"}}};
+        res.set_content(response_json.dump(), "application/json");
+      }
+    } catch (const std::exception &e) {
+      res.status = 400;
+      res.set_content(nlohmann::json({{"error", e.what()}}).dump(),
+                      "application/json");
+    }
+  });
+}
+
+static void registerAudioTranscriptionsEndpoint(httplib::Server &svr) {
+  svr.Post("/v1/audio/transcriptions", [](const httplib::Request &req,
+                                          httplib::Response &res) {
+    try {
+      whisper::WhisperParams params;
+      params.language = "en";
+      std::string text = MultimodalEngine::getInstance().transcribeAudio(params);
+      nlohmann::json resp;
+      resp["text"] = text;
+      res.set_content(resp.dump(), "application/json");
+    } catch (const std::exception &e) {
+      res.status = 500;
+      res.set_content(nlohmann::json({{"error", e.what()}}).dump(),
+                      "application/json");
+    }
+  });
+}
+
+static void registerMultimodalConfigEndpoint(httplib::Server &svr) {
+  svr.Post("/v1/multimodal/config", [](const httplib::Request &req,
+                                       httplib::Response &res) {
+    try {
+      auto json = nlohmann::json::parse(req.body);
+      int num_threads = json.value("num_threads", 4);
+      int n_gpu_layers = json.value("n_gpu_layers", 16);
+      MultimodalEngine::getInstance().setThreadsAndLayers(num_threads, n_gpu_layers);
+      if (json.contains("memory_limit_bytes")) {
+        size_t limit = json["memory_limit_bytes"].get<size_t>();
+        MultimodalEngine::getInstance().setMaxMemoryLimitBytes(limit);
+      }
+      res.set_content(nlohmann::json({{"status", "ok"}}).dump(), "application/json");
+    } catch (const std::exception &e) {
+      res.status = 400;
+      res.set_content(nlohmann::json({{"error", e.what()}}).dump(),
+                      "application/json");
+    }
+  });
+}
+
 int main(int argc, char **argv) {
   if (!qnn::log::initializeLogging()) {
     std::cerr << "ERROR: Init logging failed!\n";
@@ -789,6 +905,9 @@ int main(int argc, char **argv) {
   if (pipeline) registerGenerateEndpoint(svr, pipeline.get());
   registerUpscaleEndpoint(svr);
   if (text_encoder) registerTokenizeEndpoint(svr, text_encoder.get());
+  registerChatCompletionsEndpoint(svr);
+  registerAudioTranscriptionsEndpoint(svr);
+  registerMultimodalConfigEndpoint(svr);
 
   std::cout << "Server listening on " << opts.listen_address << ":" << opts.port
             << std::endl;

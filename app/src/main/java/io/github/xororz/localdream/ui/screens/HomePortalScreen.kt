@@ -165,28 +165,28 @@ fun HomePortalScreen(navController: NavController) {
                 title = "💬 General Intelligent Chat",
                 description = "Have private, lightning-fast discussions with local LLM general chat assistants. Recommends: Qwen2.5-1.5B (unfiltered) or Llama-3.2-1B.",
                 icon = Icons.Default.Chat,
-                onClick = { /* Navigate to Local LLM Chat */ }
+                onClick = { navController.navigate(Screen.Chat.createRoute("qwen_chat_1b")) }
             )
 
             PortalCategoryCard(
                 title = "💻 Code Engineering Workspace",
                 description = "Get private, offline software development help and auto-completions. Recommends: Qwen2.5-Coder-1.5B.",
                 icon = Icons.Default.Code,
-                onClick = { /* Navigate to Code workspace */ }
+                onClick = { navController.navigate(Screen.Chat.createRoute("llama_chat_3b")) }
             )
 
             PortalCategoryCard(
                 title = "🎙️ Speech-to-Text Studio",
                 description = "Transcribe voice recordings into text offline instantly. Recommends: whisper-tiny-q4_0.",
                 icon = Icons.Default.Mic,
-                onClick = { /* Navigate to Voice page */ }
+                onClick = { navController.navigate(Screen.Voice.route) }
             )
 
             PortalCategoryCard(
                 title = "🎵 Music & Sound Generator",
                 description = "Craft original soundtrack melodies and voice synthesis locally.",
                 icon = Icons.Default.MusicNote,
-                onClick = { /* Navigate to Audio/Music page */ }
+                onClick = { navController.navigate(Screen.Voice.route) }
             )
         }
     }

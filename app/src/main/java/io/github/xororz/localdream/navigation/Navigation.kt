@@ -6,6 +6,10 @@ sealed class Screen(val route: String) {
     object ModelRun : Screen("model_run/{modelId}") {
         fun createRoute(modelId: String) = "model_run/$modelId"
     }
+    object Chat : Screen("chat/{modelId}") {
+        fun createRoute(modelId: String) = "chat/$modelId"
+    }
+    object Voice : Screen("voice")
 
     object Upscale : Screen("upscale")
 
