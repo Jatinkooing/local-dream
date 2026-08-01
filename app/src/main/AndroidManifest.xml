@@ -19,6 +19,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Offline speech-to-text studio (Whisper GGUF) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:name=".LocalDreamApplication"
         android:allowBackup="true"

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -66,6 +67,7 @@ struct ServerOptions {
   bool lowram = false;
   bool anima_seq_dit = false;  // (anima+lowram) never co-resident DiT halves
   bool upscaler_mode = false;
+  bool multimodal_mode = false;  // lightweight server: chat/voice endpoints only
   bool convert_mode = false;
   bool convert_clip_skip_2 = false;
 
@@ -87,6 +89,8 @@ static void showHelp() {
          "  --type <type>          Model format: sd15cpu (MNN), sd15npu "
          "(QNN), sdxl (QNN), anima (QNN)\n"
          "  --upscaler_mode        Upscale-only server, no diffusion model\n"
+         "  --multimodal_mode      Chat/voice-only GGUF server, no diffusion "
+         "model\n"
          "  --convert <dir>        Convert model.safetensors in <dir> to MNN "
          "and exit\n"
          "\n"
@@ -136,6 +140,7 @@ static ServerOptions processCommandLine(int argc, char **argv) {
     OPT_CONVERT_CLIP_SKIP_2,
     OPT_PATCH,
     OPT_UPSCALER_MODE,
+    OPT_MULTIMODAL_MODE,
     OPT_LOWRAM,
     OPT_ANIMA_SEQ_DIT,
     OPT_LOG_LEVEL
@@ -155,6 +160,7 @@ static ServerOptions processCommandLine(int argc, char **argv) {
       {"clip_skip_2", pal::no_argument, NULL, OPT_CONVERT_CLIP_SKIP_2},
       {"patch", pal::required_argument, NULL, OPT_PATCH},
       {"upscaler_mode", pal::no_argument, NULL, OPT_UPSCALER_MODE},
+      {"multimodal_mode", pal::no_argument, NULL, OPT_MULTIMODAL_MODE},
       {"lowram", pal::no_argument, NULL, OPT_LOWRAM},
       {"anima_seq_dit", pal::no_argument, NULL, OPT_ANIMA_SEQ_DIT},
       {"log_level", pal::required_argument, NULL, OPT_LOG_LEVEL},
@@ -212,6 +218,9 @@ static ServerOptions processCommandLine(int argc, char **argv) {
       case OPT_UPSCALER_MODE:
         opts.upscaler_mode = true;
         break;
+      case OPT_MULTIMODAL_MODE:
+        opts.multimodal_mode = true;
+        break;
       case OPT_LOWRAM:
         opts.lowram = true;
         break;
@@ -230,7 +239,7 @@ static ServerOptions processCommandLine(int argc, char **argv) {
     }
   }
 
-  if (opts.upscaler_mode || opts.convert_mode) return opts;
+  if (opts.upscaler_mode || opts.multimodal_mode || opts.convert_mode) return opts;
 
   if (typeStr == "sd15cpu")
     opts.type = ServerOptions::ModelType::kSd15Cpu;
@@ -683,6 +692,38 @@ static void registerTokenizeEndpoint(httplib::Server &svr,
   });
 }
 
+// Root used to resolve per-request GGUF model files (chat / whisper). Set
+// from --model_dir in main(); for --multimodal_mode it points at the active
+// GGUF model directory owned by the app (e.g. .../models/qwen_chat_1b).
+static std::string g_multimodal_model_dir;
+
+// Resolves a model identifier to a concrete .gguf file on disk. Accepts an
+// absolute path, a bare name inside the model dir, or an empty string (then
+// model.gguf or the first .gguf in the dir wins). Falls back to returning the
+// identifier itself so the engine can at least log what was requested.
+static std::string resolveGgufPath(const std::string &model) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  if (!model.empty() && model.front() == '/' && fs::exists(model, ec)) {
+    return model;
+  }
+  const fs::path dir(g_multimodal_model_dir);
+  if (!model.empty()) {
+    const fs::path direct = dir / model;
+    if (fs::exists(direct, ec)) return direct.string();
+    const fs::path with_ext = dir / (model + ".gguf");
+    if (fs::exists(with_ext, ec)) return with_ext.string();
+  }
+  const fs::path model_gguf = dir / "model.gguf";
+  if (fs::exists(model_gguf, ec)) return model_gguf.string();
+  if (!g_multimodal_model_dir.empty() && fs::is_directory(dir, ec)) {
+    for (const auto &entry : fs::directory_iterator(dir, ec)) {
+      if (entry.path().extension() == ".gguf") return entry.path().string();
+    }
+  }
+  return model;
+}
+
 static void registerChatCompletionsEndpoint(httplib::Server &svr) {
   svr.Post("/v1/chat/completions", [](const httplib::Request &req,
                                       httplib::Response &res) {
@@ -703,8 +744,12 @@ static void registerChatCompletionsEndpoint(httplib::Server &svr) {
 
       int num_threads = json.value("num_threads", 4);
       int n_gpu_layers = json.value("n_gpu_layers", 16);
-      MultimodalEngine::getInstance().setThreadsAndLayers(num_threads, n_gpu_layers);
-      MultimodalEngine::getInstance().loadChatModel(model);
+      auto &engine = MultimodalEngine::getInstance();
+      engine.setThreadsAndLayers(num_threads, n_gpu_layers);
+      // Map the OpenAI "model" field onto a resident GGUF file before
+      // (re)loading; repeated identical requests reuse the resident weights.
+      const std::string resolved_model = resolveGgufPath(model);
+      engine.loadChatModel(resolved_model);
 
       if (stream) {
         res.set_header("Content-Type", "text/event-stream");
@@ -762,11 +807,47 @@ static void registerAudioTranscriptionsEndpoint(httplib::Server &svr) {
   svr.Post("/v1/audio/transcriptions", [](const httplib::Request &req,
                                           httplib::Response &res) {
     try {
+      auto json = nlohmann::json::parse(req.body.empty() ? "{}" : req.body);
       whisper::WhisperParams params;
-      params.language = "en";
-      std::string text = MultimodalEngine::getInstance().transcribeAudio(params);
+      params.language = json.value("language", "en");
+      const std::string audio_path = json.value("audio_path", "");
+      const std::string model = json.value("model", "");
+
+      auto &engine = MultimodalEngine::getInstance();
+      const int num_threads = json.value("num_threads", 4);
+      const int n_gpu_layers = json.value("n_gpu_layers", 16);
+      engine.setThreadsAndLayers(num_threads, n_gpu_layers);
+
+      // Whisper weights must be resident before transcription; loading here
+      // (rather than only at server start) keeps the endpoint self-healing
+      // after the engine reclaimed memory for a chat/diffusion model.
+      if (engine.getActiveModel() != MultimodalEngine::ActiveModel::AudioSpeech) {
+        engine.loadAudioModel(resolveGgufPath(model));
+      }
+
+      // Decode the recorded PCM16 file the app captured, if one was posted.
+      if (!audio_path.empty()) {
+        std::ifstream in(audio_path, std::ios::binary);
+        if (in) {
+          const std::vector<char> raw((std::istreambuf_iterator<char>(in)),
+                                      std::istreambuf_iterator<char>());
+          const size_t sample_count = raw.size() / sizeof(int16_t);
+          params.pcm_data.resize(sample_count);
+          const int16_t *samples =
+              reinterpret_cast<const int16_t *>(raw.data());
+          for (size_t i = 0; i < sample_count; ++i) {
+            params.pcm_data[i] = samples[i] / 32768.0f;
+          }
+        } else {
+          std::cerr << "[Server] Warning: cannot read audio file: "
+                    << audio_path << std::endl;
+        }
+      }
+
+      std::string text = engine.transcribeAudio(params);
       nlohmann::json resp;
       resp["text"] = text;
+      resp["language"] = params.language;
       res.set_content(resp.dump(), "application/json");
     } catch (const std::exception &e) {
       res.status = 500;
@@ -783,12 +864,18 @@ static void registerMultimodalConfigEndpoint(httplib::Server &svr) {
       auto json = nlohmann::json::parse(req.body);
       int num_threads = json.value("num_threads", 4);
       int n_gpu_layers = json.value("n_gpu_layers", 16);
-      MultimodalEngine::getInstance().setThreadsAndLayers(num_threads, n_gpu_layers);
+      auto &engine = MultimodalEngine::getInstance();
+      engine.setThreadsAndLayers(num_threads, n_gpu_layers);
       if (json.contains("memory_limit_bytes")) {
         size_t limit = json["memory_limit_bytes"].get<size_t>();
-        MultimodalEngine::getInstance().setMaxMemoryLimitBytes(limit);
+        engine.setMaxMemoryLimitBytes(limit);
       }
-      res.set_content(nlohmann::json({{"status", "ok"}}).dump(), "application/json");
+      // Echo the applied configuration so the UI can confirm the backend is
+      // actually running with the slider values it sent.
+      nlohmann::json resp = {{"status", "ok"},
+                             {"num_threads", num_threads},
+                             {"n_gpu_layers", n_gpu_layers}};
+      res.set_content(resp.dump(), "application/json");
     } catch (const std::exception &e) {
       res.status = 400;
       res.set_content(nlohmann::json({{"error", e.what()}}).dump(),
@@ -814,11 +901,17 @@ int main(int argc, char **argv) {
   MNN::Interpreter *safety_interpreter = nullptr;
   MNN::Session *safety_session = nullptr;
 
-  if (opts.upscaler_mode) {
-    QNN_INFO("Upscaler mode - skipping MNN and QNN model initialization");
-    // QNN upscalers need --lib_dir; MNN-only upscaling runs without it.
-    if (!opts.lib_dir.empty() && !qnn_runtime::init(opts.lib_dir))
+  if (opts.upscaler_mode || opts.multimodal_mode) {
+    QNN_INFO(opts.multimodal_mode
+                 ? "Multimodal mode - chat/voice GGUF endpoints only, no "
+                   "diffusion init"
+                 : "Upscaler mode - skipping MNN and QNN model initialization");
+    // QNN upscalers need --lib_dir; MNN-only upscaling and the (CPU-first)
+    // multimodal GGUF runtime run fine without it.
+    if (opts.upscaler_mode && !opts.lib_dir.empty() &&
+        !qnn_runtime::init(opts.lib_dir))
       showHelpAndExit("Failed get QNN system func ptrs.");
+    g_multimodal_model_dir = opts.model_dir;
   } else {
     text_encoder = std::make_unique<TextEncoder>(opts.isSdxl(), opts.isAnima());
     try {
