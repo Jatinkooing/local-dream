@@ -32,8 +32,13 @@ if command -v rustup >/dev/null 2>&1; then
   echo "[build_cpu.sh] rustup found, updating stable..."
   rustup update stable 2>&1 | tail -n 20 || true
   rustup default stable 2>&1 | tail -n 20 || true
+  echo "[build_cpu.sh] Adding Android Rust targets..."
+  rustup target add aarch64-linux-android 2>&1 | tail -n 30 || true
+  rustup target add armv7-linux-androideabi 2>&1 | tail -n 20 || true
+  rustup target add x86_64-linux-android 2>&1 | tail -n 20 || true
   cargo --version
   rustc --version
+  rustup target list --installed
 fi
 
 # If cargo still not found, try common locations
